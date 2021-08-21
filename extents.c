@@ -38,7 +38,7 @@ int block_size, nfiles, n_ext= 0;
 
 fileinfo *info; // ptr to array of files' info of size nfiles
 
-bool print_flags= true, print_shared= true, print_unshared= true, no_headers= false; 
+bool print_flags= true, print_shared= true, print_unshared= true, no_headers= false, print_phys_addr= false; 
 
 extents *shared; // one per ring of shared extents
 
@@ -78,37 +78,50 @@ extents *new_exts(int max_sz) {
 }
 
 void usage(char *p) {
-  fail("usage: %s [-f] [-h] [-s|-u] FILE1 FILE2 ...\n", p);
+  fail("usage: %s [-f] [-h] [-p] [-s|-u] FILE1 FILE2 ...\n", p);
 }
 
-static int pp= 0;
-void print(extent *e)
+#define LINENO_FMT "%-6"
+#define FIELD_WIDTH "15"
+
+void print(int n, extent *e)
 {
-  char buf[10];
+  char linenobuf[10], filenobuf[10];
   off_t log= e->l, ph= e->p, len= e->len;
   int flags= e->flags;
-  //bool is_shared= (flags & FIEMAP_EXTENT_SHARED) != 0;
-  if (1) { // ((print_shared && is_shared) || (print_unshared && !is_shared) ) {
-    char *filename= nfiles == 1 ? "" : (sprintf(buf, no_headers ? "%d " : "%4d ", e->info->argno), buf);
-    if (!no_headers) 
-      printf("%s%12ld %12ld %12ld", filename, log, ph, len);
-    else
-      printf("%s%ld %ld %ld", filename, log, ph, len);
-    if (print_flags) {
-      char *fs= flags2str(flags);
-      printf("   %s", fs);
-    } //else
-      //putchar('\n');
+  char *filename= nfiles == 1 ? "" : (sprintf(filenobuf, no_headers ? "%d " : "%4d ", e->info->argno), filenobuf);
+  if (no_headers) {
+    char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %ld";
+    printf(fmt, filename, log, ph, len);
+  } else {
+    char *lineno;
+    if (n > 0) {
+      sprintf(linenobuf, LINENO_FMT "d ", n);
+      lineno= linenobuf;
+    } else
+      lineno= "";
+    char *fmt = print_phys_addr
+      ? "%s%s%3$" FIELD_WIDTH "ld %4$" FIELD_WIDTH "ld %5$" FIELD_WIDTH "ld" : "%s%s%3$" FIELD_WIDTH "ld %5$" FIELD_WIDTH "ld";
+    printf(fmt, lineno, filename, log, ph, len);
   }
-  //assert(pp++ < 100);
+  if (print_flags) {
+    char *fs= flags2str(flags);
+    printf("   %s", fs);
+  }
 }
+
+#define STRING_FIELD_FMT "%" FIELD_WIDTH "s"
 
 void print_header(int i) {
   if (i >= 0) puts(info[i].name); 
-  fputs("No.       Logical     Physical       Length", stdout);
+  printf(LINENO_FMT "s " STRING_FIELD_FMT " ", "No.", "Logical");
+  if (print_phys_addr) printf(STRING_FIELD_FMT " ", "Physical");
+  printf(STRING_FIELD_FMT " ", "Length");
   if (print_flags)
-    fputs("   Flags", stdout);
-  puts("\n           Offset      Offset");
+    fputs("  Flags", stdout);
+  printf("\n" LINENO_FMT "s " STRING_FIELD_FMT, "", "Offset");
+  if (print_phys_addr) printf(STRING_FIELD_FMT, "Offset");
+  putchar('\n');
 }
 
 void read_ext(char *fn[])
@@ -154,10 +167,23 @@ void do_print_shared(int lineno, extent *e)
   printf("%d: ", lineno);
   do {
     assert(n != NULL);
-    print(n); fputs("  ", stdout);
+    print(0, n); fputs("  ", stdout);
     n= n->nxt_sh;
     assert(i <= nfiles);
   } while (n != e);
+}
+
+void output_unshared()
+{
+  for (int i= 0; i < nfiles; i++) {
+    if (!no_headers) print_header(i);
+    for (int e= 0; e < info[i].n_exts; ++e) {
+      extent *ext= info[i].exts[e];
+      if (ext->nxt_sh == NULL) {
+	print(e+1, ext); putchar('\n');
+      }
+    }
+  }
 }
 
 void output()
@@ -175,24 +201,25 @@ void output()
   for (int i= 0; i < nfiles; i++) {
     if (!no_headers) print_header(i);
     ITER(info[i].unsh, ext, {
-	print(ext); putchar('\n');
+	print(0, ext); putchar('\n');
       });
   }
 }
 
 void args(int argc, char *argv[])
 {
-  struct option longopts[]= { { "no_flags",   false, NULL, 'f' },
-			      { "help",       false, NULL, 'h' },
-			      { "no_headers", false, NULL, 'n' },
+  struct option longopts[]= { { "no_flags",        false, NULL, 'f' },
+			      { "help",            false, NULL, 'h' },
+			      { "no_headers",      false, NULL, 'n' },
+			      { "print_phys_addr", false, NULL, 'p'},
   };
-  for (int c; c= getopt_long(argc, argv, "fhno:", longopts, NULL), c != -1; )
+  for (int c; c= getopt_long(argc, argv, "fhno:p", longopts, NULL), c != -1; )
     switch (c) {
-    case 'f': print_flags= false; break;
-    case 'h': print_help()      ; break;
-    case 'n': no_headers=   true; break;
-      //case 's': print_unshared= false; break;
-    case 'o': output_format(); break;
+    case 'f': print_flags=    false; break;
+    case 'h': print_help()         ; break;
+    case 'n': no_headers=      true; break;
+    case 'o': output_format()      ; break;
+    case 'p': print_phys_addr= true; break;
     default: usage(argv[0]);
     }
   nfiles= argc - optind;
@@ -292,7 +319,7 @@ extents *find_shortest(extents *a)
 void print_set(extents *ps)
 {
   for (int i= 0; i < card(ps); ++i) {
-    print(get(ps, i)); fputs("  ", stdout);
+    print(0, get(ps, i)); fputs("  ", stdout);
   }
 }
 
@@ -411,12 +438,14 @@ int main(int argc, char *argv[])
   
   read_ext(&argv[optind]);
 
-  if (nfiles > 1) {
+  if (nfiles == 1)
+    output_unshared();
+  else {
     phys_sort();
     find_shares();
     // sort by logical
+    output();
   }
-  output();
 
   return 0;
 }
