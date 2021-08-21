@@ -77,8 +77,8 @@ extent *copy_extent(struct fiemap_extent *fe, fileinfo *ip)
 
 void get_extents(fileinfo *ip)
 {
-  struct fiemap_extent *e= get_linux_extents(ip->fd, ip->size, &ip->nexts);
-  ip->exts = calloc_s(ip->nexts, sizeof(extent *));
-  for (int i= 0; i < ip->nexts; ++i)
+  struct fiemap_extent *e= get_linux_extents(ip->fd, ip->size, &ip->n_exts);
+  ip->exts = calloc_s(ip->n_exts, sizeof(extent *));
+  for (int i= 0; i < ip->n_exts; ++i)
     ip->exts[i]= copy_extent(&e[i], ip);
 }

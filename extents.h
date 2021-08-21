@@ -5,6 +5,7 @@
 
 typedef struct fileinfo fileinfo;
 typedef struct extent extent;
+typedef struct extents extents;
 
 struct extent {
   fileinfo *info;  // the file this belongs to
@@ -19,10 +20,17 @@ struct extent {
 
 struct fileinfo {
   char *name;    // filename
+  int argno;     // which arg (starting at 0)
   int fd;        // open fd
   off_t size;    // file size from stat(2)
-  int nexts;     // # extents
+  int n_exts;    // # extents
   extent **exts; // ptr to array of extents
+  extents *unsh; // unshared extents
+};
+
+struct extents {
+  unsigned nelems, max_sz;
+  extent *elems[];
 };
 
 #endif

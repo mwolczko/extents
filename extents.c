@@ -34,38 +34,77 @@
 #include "fiemap.h"
 #include "extents.h"
 
-int block_size, nfiles;
+int block_size, nfiles, n_ext= 0;
 
 fileinfo *info; // ptr to array of files' info of size nfiles
 
 bool print_flags= true, print_shared= true, print_unshared= true, no_headers= false; 
+
+extents *shared; // one per ring of shared extents
+
+#define ITER(es, elem, stmt)		     \
+  for (int _i= 0; _i < (es)->nelems; ++_i) { \
+    extent *elem= get((es), _i);	     \
+    do { stmt; } while (0);		     \
+  }
+
+unsigned card(extents *ps) { return ps->nelems; }
+
+extent *get(extents *ps, int i) { assert(card(ps) > i); return ps->elems[i]; }
+
+void put(extents *ps, int i, extent *e) { assert(card(ps) > i); ps->elems[i]= e; }
+
+bool is_empty(extents *s) { return card(s) == 0; }
+
+bool is_singleton(extents *s) { return card(s) == 1; }
+
+bool is_multiple(extents *s) { return card(s) > 1; }
+
+extent *first(extents *s) { assert(!is_empty(s)); return s->elems[0]; }
+
+extent *only(extents *s) { assert(is_singleton(s)); return first(s); }
+
+extent *last(extents *s) { return s->elems[card(s) - 1]; }
+
+off_t end_p(extent *e) { return e->p + e->len; }
+
+// -ve max_sz means growable, abs value is initial size
+extents *new_exts(int max_sz) {
+  unsigned max_sz_abs = max_sz < 0 ? -max_sz : max_sz;
+  extents *ps= malloc_s(sizeof(extents) + max_sz_abs * sizeof(extent *));
+  ps->nelems= 0;
+  ps->max_sz= max_sz;
+  return ps;
+}
 
 void usage(char *p) {
   fail("usage: %s [-f] [-h] [-s|-u] FILE1 FILE2 ...\n", p);
 }
 
 static int pp= 0;
-void print(int n, extent *e)
+void print(extent *e)
 {
+  char buf[10];
   off_t log= e->l, ph= e->p, len= e->len;
   int flags= e->flags;
   //bool is_shared= (flags & FIEMAP_EXTENT_SHARED) != 0;
   if (1) { // ((print_shared && is_shared) || (print_unshared && !is_shared) ) {
+    char *filename= nfiles == 1 ? "" : (sprintf(buf, no_headers ? "%d " : "%4d ", e->info->argno), buf);
     if (!no_headers) 
-      printf("%4d %12ld %12ld %12ld", n, log, ph, len);
+      printf("%s%12ld %12ld %12ld", filename, log, ph, len);
     else
-      printf("%ld %ld %ld", log, ph, len);
+      printf("%s%ld %ld %ld", filename, log, ph, len);
     if (print_flags) {
       char *fs= flags2str(flags);
-      printf("   %s\n", fs);
-    } else
-      putchar('\n');
+      printf("   %s", fs);
+    } //else
+      //putchar('\n');
   }
   //assert(pp++ < 100);
 }
 
 void print_header(int i) {
-  puts(info[i].name); 
+  if (i >= 0) puts(info[i].name); 
   fputs("No.       Logical     Physical       Length", stdout);
   if (print_flags)
     fputs("   Flags", stdout);
@@ -80,7 +119,7 @@ void read_ext(char *fn[])
     int fd= open(name, O_RDONLY);
     if (fd < 0)
       fail("Can't open file %s : %s\n", name, strerror(errno));
-    info[i].name= name; info[i].fd= fd;
+    info[i].name= name; info[i].fd= fd; info[i].argno= i;
     struct stat sb;
     if (fstat(fd, &sb) < 0)
       fail("Can't stat %s : %s\n", name, strerror(errno));
@@ -91,19 +130,12 @@ void read_ext(char *fn[])
     else if (block_size != sb.st_blksize)
       fail("block size weirdness! %d v %d\n", block_size, sb.st_blksize);
     info[i].size= sb.st_size;
-    //info[i].exts= get_extents(info[i].fd, sb.st_size, &info[i].nexts);
+    //info[i].exts= get_extents(info[i].fd, sb.st_size, &info[i].n_exts);
     get_extents(&info[i]);
+    n_ext += info[i].n_exts;
+    info[i].unsh= new_exts(-info[i].n_exts);
   }
 }
-
-/*void get_all_extents()
-{
-  //exts= calloc(nfiles, sizeof(struct fiemap_extent *));
-  //if (exts == NULL) fail("calloc failed\n");
-  for (int i= 0; i < nfiles; ++i) {
-    info[i].exts= get_extents(info[i].fd, block_size);
-  }
-  }*/
 
 void print_help()
 {
@@ -115,15 +147,36 @@ void output_format()
 {
 }
 
+void do_print_shared(int lineno, extent *e)
+{
+  int i= 0;
+  extent *n= e;
+  printf("%d: ", lineno);
+  do {
+    assert(n != NULL);
+    print(n); fputs("  ", stdout);
+    n= n->nxt_sh;
+    assert(i <= nfiles);
+  } while (n != e);
+}
+
 void output()
 {
+  if (nfiles > 1) {
+    puts("Shared: ");
+    if (!no_headers) print_header(-1);
+    int e= 1;
+    ITER(shared, sh, {
+	do_print_shared(e++, sh);
+	putchar('\n');
+      });
+  }
+  puts("Not Shared:");
   for (int i= 0; i < nfiles; i++) {
     if (!no_headers) print_header(i);
-    for (int e= 0; e < info[i].nexts; ++e) {
-      extent *ext= info[i].exts[e];
-      if (ext->nxt_sh == NULL)
-	print(e+1, ext);
-    }
+    ITER(info[i].unsh, ext, {
+	print(ext); putchar('\n');
+      });
   }
 }
 
@@ -154,63 +207,30 @@ int ext_cmp_phys(extent **a, extent **b)
 void phys_sort()
 {
   for (int i= 0; i < nfiles; ++i) {
-    qsort(info[i].exts, info[i].nexts, sizeof(extent *), (__compar_fn_t)&ext_cmp_phys);
+    qsort(info[i].exts, info[i].n_exts, sizeof(extent *), (__compar_fn_t)&ext_cmp_phys);
   }
 }
 
-typedef struct extents {
-  unsigned nelems;
-  extent *elems[];
-} extents;
-
-typedef struct {
-  extent *prev, *next;
-} iter;
-
-extent *new_iter() { return malloc_s(sizeof(iter)); }
-
-unsigned card(extents *ps) { return ps->nelems; }
-
-extent *get(extents *ps, int i) { assert(card(ps) > i); return ps->elems[i]; }
-
-void put(extents *ps, int i, extent *e) { assert(card(ps) > i); ps->elems[i]= e; }
-
-bool is_empty(extents *s) { return card(s) == 0; }
-
-bool is_singleton(extents *s) { return card(s) == 1; }
-
-bool is_multiple(extents *s) { return card(s) > 1; }
-
-extent *first(extents *s) { assert(!is_empty(s)); return s->elems[0]; }
-
-extent *only(extents *s) { assert(is_singleton(s)); return first(s); }
-
-extent *last(extents *s) { return s->elems[card(s) - 1]; }
-
-off_t end_p(extent *e) { return e->p + e->len; }
-
-#define ITER(es, elem, stmt)		     \
-  for (int _i= 0; _i < (es)->nelems; ++_i) { \
-    extent *elem= get((es), _i);	     \
-    do { stmt; } while (0);		     \
+extents *add(extents *ps, extent *e) {
+  assert(ps->max_sz < 0 || card(ps) < ps->max_sz);
+  if (ps->max_sz < 0 && card(ps) == -ps->max_sz) {
+    ps->max_sz *= 2;
+    ps= realloc(ps, sizeof(extents) - ps->max_sz * sizeof(extent *));
   }
-
-extents *new_exts() {
-  extents *ps= malloc_s(sizeof(extents) + nfiles * sizeof(extent *));
-  ps->nelems= 0;
-  return ps;
-}
-
-void add(extents *ps, extent *e) {
-  assert(card(ps) < nfiles);
   put(ps, ps->nelems++, e);
 }
 
+void add_unshared(extent *e)
+{
+  add(e->info->unsh, e);
+}
+
+// the first extent from each file
 extents *all() {
-  extents *ps= new_exts();
+  extents *ps= new_exts(nfiles);
   for (int i= 0; i < nfiles; ++i)
-    if (info[i].nexts > 0)
-      add(ps, info[i].exts[0]);
+    if (info[i].n_exts > 0)
+      ps= add(ps, info[i].exts[0]);
   return ps;
 }
 
@@ -218,11 +238,11 @@ typedef bool (*filter_t)(extent *);
 
 extents *filter(extents *ps, filter_t f)
 {
-  extents *res = new_exts();
+  extents *res = new_exts(nfiles);
   ITER(ps, elem, 
       if ((*f)(elem)) {
-	//print(-10, elem);
-	add(res, elem);
+	//print(elem);
+	res= add(res, elem);
       });
   return res;
 }
@@ -271,14 +291,15 @@ extents *find_shortest(extents *a)
 
 void print_set(extents *ps)
 {
-  for (int i= 0; i < card(ps); ++i)
-    print(i, get(ps, i));
+  for (int i= 0; i < card(ps); ++i) {
+    print(get(ps, i)); fputs("  ", stdout);
+  }
 }
 
 extents *remove_elem(extents *ps, extent *e)
 {
-  extents *new= new_exts();
-  ITER(ps, elem, if (elem != e) add(new, elem););
+  extents *new= new_exts(nfiles);
+  ITER(ps, elem, if (elem != e) new= add(new, elem););
   assert(card(new) == card(ps) - 1);
   return new;
 }
@@ -288,11 +309,11 @@ extents *move_next(extents *ps, extent *e)
   extents *del= remove_elem(ps, e);
   fileinfo *info= e->info;
   int n;
-  for (n= 0; n < info->nexts; ++n)
+  for (n= 0; n < info->n_exts; ++n)
     if (info->exts[n] == e)
       break;
-  if (n < info->nexts - 1)
-    add(del, info->exts[n+1]);
+  if (n < info->n_exts - 1)
+    del= add(del, info->exts[n+1]);
   return del;
 }
 
@@ -315,67 +336,70 @@ extent *split(extent *e, off_t end)
 // check that e is on a ring 
 void validate(extent *e)
 {
-  puts("shared: ");
   int i= 0;
   extent *n= e;
   do {
     assert(n != NULL);
-    print(i++, n);
     n= n->nxt_sh;
     assert(i <= nfiles);
   } while (n != e);
 }
-  
+
 void find_shares()
 {
   extents *curr= all();
+  shared= new_exts(n_ext);
   do {
-    //puts("loop head: "); print_set(curr);
+    //puts("loop head: "); print_set(curr); putchar('\n');
     extents *low= find_lowest_p(curr);
-    //puts("low: "); print_set(low);
+    //puts("low: "); print_set(low); putchar('\n');
     if (is_singleton(low)) {
       extent *lowest= only(low);
-      //puts("lowest: "); print(-6, lowest);
+      //puts("lowest: "); print(lowest); putchar('\n');
       extents *allbutlowest= remove_elem(curr, lowest);
-      //puts("allbutlowest: "); print_set(allbutlowest);
+      //puts("allbutlowest: "); print_set(allbutlowest); putchar('\n');
       if (is_empty(allbutlowest)) { // last one
 	lowest->nxt_sh= NULL;
+	add_unshared(lowest);
 	curr= move_next(curr, lowest);
       } else {
 	extents *next_lowest= find_lowest_p(allbutlowest);
-	//puts("next lowest: "); print_set(next_lowest);
+	//puts("next lowest: "); print_set(next_lowest); putchar('\n');
 	if (end_p(lowest) <= first(next_lowest)->p) { // lowest precedes all others
-	  //puts("prec: "); print_set(low);
+	  //puts("prec: "); print_set(low); putchar('\n');
 	  lowest->nxt_sh= NULL;
+	  add_unshared(lowest);
 	  curr= move_next(curr, lowest);
 	} else {
-	  //puts("split: "); print_set(low);
+	  //puts("split: "); print_set(low); putchar('\n');
 	  extent *head= split(lowest, first(next_lowest)->p);
 	  head->nxt_sh= NULL;
+	  add_unshared(head);
 	}
       }
     } else {
       // first, take all the ones of the same length
       extents *shortest= find_shortest(low);
-      //puts("shortest: "); print_set(shortest);
+      //puts("shortest: "); print_set(shortest); putchar('\n');
       extent *prev= NULL;
       extent *frst= first(shortest);
-      //puts("first: "); print(-33, frst);
+      //puts("first: "); print(frst); putchar('\n');
       off_t end= end_p(frst);
       ITER(shortest, s, {
 	  curr= move_next(curr, s);
 	  low= remove_elem(low, s);
-	  s->nxt_sh= prev;
+	  s->nxt_sh= prev; 
 	  prev= s;
 	});
       // next, split the longer ones
-      //puts("new low: "); print_set(low);
+      //puts("new low: "); print_set(low); putchar('\n');
       ITER(low, l, {
 	  extent *head= split(l, end);
-	  head->nxt_sh= prev;
+	  head->nxt_sh= prev; 
 	  prev= head;
 	});
       frst->nxt_sh= prev; // close the ring
+      shared= add(shared, prev);
       validate(prev);
     }
   } while (!is_empty(curr));
