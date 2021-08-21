@@ -1,16 +1,20 @@
-OS=$(shell uname)
+OS := $(shell uname)
 
-includes=-I$(OS) -I.
-CFLAGS=$(includes)
+export O_CFLAGS := $(CFLAGS)
+CFLAGS := -I$(OS) -I. -g
 
-extents : extents.o fail.o $(OS)/fiemap.o
+extents : extents.o fail.o mem.o $(OS)/fiemap.o
 
 extents.o : extents.c
 
 fail.o : fail.c
 
-$(OS)/fiemap.o :
-	(cd $(OS); make)
+mem.o : mem.c
+
+#$(OS)/fiemap.o : $(OS)/fiemap.c
+
+$(OS):
+	${MAKE} -C $@ # CFLAGS=$(O_CFLAGS) $@ 
 
 install: 
 	install -c extents /usr/local/bin
@@ -20,4 +24,4 @@ test:
 
 clean:
 	rm -f *.o extents
-	(cd $(OS); make clean)
+	make -C $(OS) clean

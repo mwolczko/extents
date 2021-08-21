@@ -1,3 +1,6 @@
+
+CFLAGS = -I..
+
 fiemap.o : fiemap.c
 
 clean:
