@@ -5,7 +5,7 @@
 
 typedef struct fileinfo fileinfo;
 typedef struct extent extent;
-typedef struct extents extents;
+typedef struct list list;
 
 struct extent {
   fileinfo *info;  // the file this belongs to
@@ -13,9 +13,7 @@ struct extent {
   off_t p;         // physical offset on device
   off_t len;
   int flags;
-  //extent *nxt;   // next extent for this file
   extent *nxt_sh;  // link to other extents which share data
-  extent *nxt_tmp; // link used for scanning
 };
 
 struct fileinfo {
@@ -25,12 +23,12 @@ struct fileinfo {
   off_t size;    // file size from stat(2)
   int n_exts;    // # extents
   extent **exts; // ptr to array of extents
-  extents *unsh; // unshared extents
+  list *unsh; // unshared extents
 };
 
-struct extents {
+struct list {
   unsigned nelems, max_sz;
-  extent *elems[];
+  void *elems[];
 };
 
 #endif

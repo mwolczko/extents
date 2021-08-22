@@ -5,7 +5,7 @@ CFLAGS := -I$(OS) -I. -g
 
 extents : extents.o fail.o mem.o $(OS)/fiemap.o
 
-extents.o : extents.c
+extents.o : extents.c extents.h fail.h mem.h $(OS)/fiemap.h
 
 fail.o : fail.c
 

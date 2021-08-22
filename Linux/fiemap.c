@@ -71,7 +71,6 @@ extent *copy_extent(struct fiemap_extent *fe, fileinfo *ip)
   e->len= fe->fe_length;
   e->flags= fe->fe_flags;
   e->nxt_sh= NULL;
-  e->nxt_tmp= NULL;
   return e;
 }
 
