@@ -28,8 +28,8 @@ int block_size, nfiles, n_ext= 0;
 fileinfo *info; // ptr to array of files' info of size nfiles
 
 bool print_flags        = true,
-     print_shared_only  = true,
-     print_unshared_only= true,
+     print_shared_only  = false,
+     print_unshared_only= false,
      no_headers         = false,
      print_phys_addr    = false,
      cmp_output         = false;
@@ -95,6 +95,10 @@ void args(int argc, char *argv[])
     }
   nfiles= argc - optind;
   if (nfiles < 1) usage(argv[0]);
+  if (print_shared_only && print_unshared_only)
+    fail("Must choose only one of -s (--print_shared_only) and -u (--print_unshared_only)\n");
+  if (cmp_output && nfiles != 2)
+    fail("Must have two files with -c (--cmp_output)\n");
 }
 
 unsigned n_elems(extents *ps) { return ps->nelems; }
@@ -136,7 +140,7 @@ void print(extent *e)
   char filenobuf[10];
   off_t log= e->l, ph= e->p, len= e->len;
   int flags= e->flags;
-  char *fileno= nfiles == 1 ? "" : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH "d ", e->info->argno), filenobuf);
+  char *fileno= nfiles == 1 ? "" : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH "d ", e->info->argno+1), filenobuf);
   if (no_headers) {
     char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
     printf(fmt, fileno, log, ph, len);
@@ -154,8 +158,8 @@ void print(extent *e)
 
 #define STRING_FIELD_FMT "%" FIELD_WIDTH "s"
 
-void print_header1() {
-  printf("%" FILENO_WIDTH "s " STRING_FIELD_FMT " ", "No.", "Logical");
+void print_header1(char *s) {
+  printf("%" FILENO_WIDTH "s " STRING_FIELD_FMT " ", s ? s : "File", "Logical");
   if (print_phys_addr) printf(STRING_FIELD_FMT " ", "Physical");
   printf(STRING_FIELD_FMT " ", "Length");
   if (print_flags)
@@ -168,9 +172,9 @@ void print_header2() {
   printf(STRING_FIELD_FMT " ", "");
 }
 
-void print_header(int i) {
+void print_header(int i, char *h) {
   puts(info[i].name); 
-  print_header1();
+  print_header1(h);
   putchar('\n');
   print_header2();
   putchar('\n');
@@ -183,7 +187,7 @@ void output_format()
 void print_extents_by_file()
 {
   for (int i= 0; i < nfiles; i++) {
-    if (!no_headers) print_header(i);
+    if (!no_headers) print_header(i, "#");
     for (int e= 0; e < info[i].n_exts; ++e) {
       extent *ext= info[i].exts[e];
       if (ext->nxt_sh == NULL) {
@@ -214,7 +218,7 @@ void print_shared_extents()
     puts("Shared: ");
     printf(LINENO_FMT "s ", "");
     for (unsigned i= 0; i < max_n_shared; ++i) {
-      print_header1(); fputs(SEP, stdout);
+      print_header1("File"); fputs(SEP, stdout);
     }
     putchar('\n');
     printf(LINENO_FMT "s ", "");
@@ -237,7 +241,7 @@ void print_unshared_extents()
     puts("\nNot Shared:");
   for (int i= 0; i < nfiles; i++) {
     if (!is_empty(info[i].unsh)) {
-      if (!no_headers) print_header(i);
+      if (!no_headers) print_header(i, "File");
       ITER(info[i].unsh, ext, {
 	  print(ext); putchar('\n');
 	});
@@ -271,7 +275,6 @@ void read_ext(char *fn[])
     else if (block_size != sb.st_blksize)
       fail("block size weirdness! %d v %d\n", block_size, sb.st_blksize);
     info[i].size= sb.st_size;
-    //info[i].exts= get_extents(info[i].fd, sb.st_size, &info[i].n_exts);
     get_extents(&info[i]);
     n_ext += info[i].n_exts;
     info[i].unsh= new_exts(-info[i].n_exts);
@@ -320,7 +323,6 @@ extents *filter(extents *ps, filter_t f)
   extents *res = new_exts(nfiles);
   ITER(ps, elem, 
       if ((*f)(elem)) {
-	//print(elem);
 	res= add(res, elem);
       });
   return res;
@@ -330,7 +332,7 @@ off_t minp;
 bool min_p(extent *e)
 {
   if (e->p <= minp) {
-    minp= e->p; //print(-1, e);
+    minp= e->p;
     return true;
   } else
     return false;
@@ -351,7 +353,7 @@ off_t minlen;
 bool min_len(extent *e)
 {
   if (e->len <= minlen) {
-    minlen= e->len; //print(-2, e);
+    minlen= e->len;
     return true;
   } else
     return false;
@@ -417,33 +419,41 @@ void validate(extent *e)
   } while (n != e);
 }
 
+#ifdef DEBUG
+#define DBG_PRINT(m, e) {puts(m); print(e); putchar('\n');}
+#define DBG_PRINTS(m, ps) {puts(m); print_set(ps); putchar('\n');}
+#else
+#define DBG_PRINT(m, e)
+#define DBG_PRINTS(m, ps)
+#endif
+
 void find_shares()
 {
   extents *curr= all();
   shared= new_exts(n_ext);
   do {
-    //puts("loop head: "); print_set(curr); putchar('\n');
+    DBG_PRINTS("loop head:", curr);
     extents *low= find_lowest_p(curr);
-    //puts("low: "); print_set(low); putchar('\n');
+    DBG_PRINTS("low:", low);
     if (is_singleton(low)) {
       extent *lowest= only(low);
-      //puts("lowest: "); print(lowest); putchar('\n');
+      DBG_PRINT("lowest:", lowest);
       extents *allbutlowest= remove_elem(curr, lowest);
-      //puts("allbutlowest: "); print_set(allbutlowest); putchar('\n');
+      DBG_PRINT("allbutlowest:", allbutlowest);
       if (is_empty(allbutlowest)) { // last one
 	lowest->nxt_sh= NULL;
 	add_unshared(lowest);
 	curr= move_next(curr, lowest);
       } else {
 	extents *next_lowest= find_lowest_p(allbutlowest);
-	//puts("next lowest: "); print_set(next_lowest); putchar('\n');
+	DBG_PRINTS("next lowest:", next_lowest);
 	if (end_p(lowest) <= first(next_lowest)->p) { // lowest precedes all others
-	  //puts("prec: "); print_set(low); putchar('\n');
+	  DBG_PRINTS("prec:", low);
 	  lowest->nxt_sh= NULL;
 	  add_unshared(lowest);
 	  curr= move_next(curr, lowest);
 	} else {
-	  //puts("split: "); print_set(low); putchar('\n');
+	  DBG_PRINTS("split:", low);
 	  extent *head= split(lowest, first(next_lowest)->p);
 	  head->nxt_sh= NULL;
 	  add_unshared(head);
@@ -452,10 +462,10 @@ void find_shares()
     } else {
       // first, take all the ones of the same length
       extents *shortest= find_shortest(low);
-      //puts("shortest: "); print_set(shortest); putchar('\n');
+      DBG_PRINTS("shortest:", shortest);
       extent *prev= NULL;
       extent *frst= first(shortest);
-      //puts("first: "); print(frst); putchar('\n');
+      DBG_PRINT("first:", frst);
       off_t end= end_p(frst);
       unsigned ring_len= 0;
       ITER(shortest, s, {
@@ -466,7 +476,7 @@ void find_shares()
 	  ring_len++;
 	});
       // next, split the longer ones
-      //puts("new low: "); print_set(low); putchar('\n');
+      DBG_PRINTS("new low:", low);
       ITER(low, l, {
 	  extent *head= split(l, end);
 	  head->nxt_sh= prev; 
@@ -493,9 +503,11 @@ int main(int argc, char *argv[])
   else {
     phys_sort();
     find_shares();
-    // sort by logical
-    print_shared_extents();
-    print_unshared_extents();
+    // sort by logical XXX?
+    // sort shared rings by file#?
+    // flag printing mess
+    if (!print_unshared_only) print_shared_extents();
+    if (!print_shared_only) print_unshared_extents();
   }
 
   return 0;
