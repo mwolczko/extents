@@ -42,7 +42,7 @@ list *shared; // list of list of extents
     do { stmt; } while (0);		     \
   }
 
-#define USAGE "usage: %s [-c|--cmp] [-f|--no_flags] [-h|--help] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 FILE2 ...\n"
+#define USAGE "usage: %s [-c|--cmp] [-f] [-h|--help] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 FILE2 ...\n"
 
 void usage(char *p) {
   fail(USAGE, p);
@@ -141,7 +141,9 @@ void print(extent *e)
 {
   char filenobuf[10];
   off_t log= e->l, ph= e->p, len= e->len;
-  char *fileno= nfiles == 1 ? "" : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", e->info->argno+1), filenobuf);
+  char *fileno= nfiles == 1 ? ""
+    : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", e->info->argno+1),
+       filenobuf);
   if (no_headers) {
     char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
     printf(fmt, fileno, log, ph, len);
@@ -151,13 +153,6 @@ void print(extent *e)
       : "%s%" FIELD_WIDTH_S "ld %4$" FIELD_WIDTH_S "ld ";
       printf(fmt, fileno, log, ph, len);
   }
-}
-
-void print_flags_for_extent(extent *e)
-{
-  int flags= e->flags;
-  char *fs= flags2str(flags);
-  printf("  %s", fs);
 }
 
 #define STRING_FIELD_FMT "%" FIELD_WIDTH_S "s"
@@ -194,25 +189,11 @@ void print_extents_by_file()
 	if (!no_headers)
 	  printf("%" FILENO_WIDTH_S "d ", e+1);
 	print(ext);
-	if (print_flags) print_flags_for_extent(ext);
+	if (print_flags) printf("  %s", flags2str(ext->flags));
 	putchar('\n');
       }
     }
   }
-}
-
-void print_shared_extent(int lineno, list *l)
-{
-  if (!no_headers) printf(LINENO_FMT "d ", lineno);
-  /*  extent *n= e;
-  do {
-    assert(n != NULL);
-    print(n); fputs(SEP, stdout);
-    n= n->nxt_sh;
-    } while (n != e);*/
-  ITER(l, elem, {
-      print(elem); fputs(SEP, stdout);
-    });
 }
 
 unsigned max_n_shared= 0;
@@ -234,7 +215,11 @@ void print_shared_extents()
   }
   int e= 1;
   ITER(shared, sh_list, {
-      print_shared_extent(e++, (list *)sh_list); putchar('\n');
+      if (!no_headers) printf(LINENO_FMT "d ", e++);
+      ITER((list*)sh_list, elem, {
+	  print(elem); fputs(SEP, stdout);
+	});
+      putchar('\n');
       if (print_flags) {
 	printf(LINENO_FMT "s ", "FLAGS");
 	ITER((list*)sh_list, sh, {
@@ -243,12 +228,6 @@ void print_shared_extents()
 		   + (print_phys_addr ? 6 : 5),
 		   flags2str(sh->flags)); 
 	  });
-	/*	for (unsigned i= 0; i < max_n_shared; ++i) {
-	  printf("%-*s", FILENO_WIDTH
-		 + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
-		 + (print_phys_addr ? 6 : 5),
-		 flags2str(sh->flags)); 
-		 }*/
 	putchar('\n');
       }
     });
@@ -256,10 +235,9 @@ void print_shared_extents()
 
 void print_unshared_extents()
 {
-  if (no_headers)
-    putchar('\n');
-  else
-    puts("\nNot Shared:");
+  putchar('\n');
+  if (!no_headers)
+    puts("Not Shared:");
   for (int i= 0; i < nfiles; i++) {
     if (!is_empty(info[i].unsh)) {
       if (!no_headers) print_header(i, "File");
