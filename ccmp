@@ -1,0 +1,99 @@
+#!/bin/bash -p 
+
+# Clone-aware cmp
+
+# ccmp <opts> file1 file2
+
+version() { echo ccmp v1.0 Aug 2021; }
+
+help() {
+    usage
+    echo
+    version
+    echo
+    cat <<\xxx
+Acts like cmp(1), but uses "extents" (which must be in the same dir or on the $PATH)
+to apply cmp only to blocks that are not shared between file1 and file2.
+<opts> are the same as those for cmp.  -b -l -s are the only useful ones.
+Setting a skip or limit will only result in incorrect output.
+
+Author: Mario Wolczko mario@wolczko.com
+
+See LICENSE file for licensing.
+xxx
+}
+
+usage() { echo usage: $0 '<cmp-opts> file1 file2' ; }
+
+OrigArgs="$@"
+CMPOPTS=
+ExtArgs=
+AWK="'"'{$5+='"'"'"$Start"'"'"'; $5 = $5 ","; print}'"'"
+ONE=1 # exit on first difference
+BYTES=0
+VERBOSE=0
+ARGS=$(getopt -n "$0" -l "help,ignore-initial:,print_bytes,verbose,bytes:,quiet,silent,version"\
+       -o ":bhi:ln:sv" -- $@)
+if [ $? -ne 0 ]; then
+    usage; exit;
+fi
+eval set -- "$ARGS"
+while :
+do
+    case "$1" in
+ 	-b|--bytes)
+	    BYTES=1 CMPOPTS="$CMPOPTS -b" ONE=1
+	    AWK="'"'{$5+='"'"'"$Start"'"'"'; printf "%s %s %s %s %s, %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 }'"'"
+	    shift;;
+	-[h?]|--help) help; exit 0;;
+	-i|--ignore-initial) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
+	-l|--verbose)
+	    VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
+	    AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
+	    shift;;
+	-n|--bytes) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
+	-s|--quiet|silent) AWK="'{}'"; shift;;
+	-v|--version) version; exit;;
+	--) shift; break;;
+	*) echo 'arg parsing error'; exit 1;;
+    esac
+done
+
+if (( BYTES && VERBOSE ))
+then AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+fi
+
+case $# in
+    0) echo 1 file - call cmp; exit;; # XXX
+    1) A="$1" B="$2";;
+    2) A="$1" B="$2" ExtArgs="$ExtArgs -i $3";;
+    3) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
+    *) usage ; exit ;;
+esac
+
+cmpAwkLoop() {
+    typeset -i Start Len Cmp
+    typeset -i Cmps=1 # logical AND of all the inverted cmp statuses (ie 1 if all returned 1 [ie same], 0 otherwise)
+    while read Start Len
+    do
+	cmp ${CMPOPTS[@]} -i "$Start" -n "$Len" "$A" "$B" | eval awk "$AWK"
+	Cmp=${PIPESTATUS[0]}
+	(( Cmps = Cmps && ! $Cmp )) # cmp returns 0 for same, 1 for different
+	if (( ONE && Cmp ))
+	then break
+	fi
+    done 
+    return $Cmps
+}
+
+PATH=`dirname $0`":$PATH" # add to PATH for extents
+extents $ExtOpts "$A" "$B" | cmpAwkLoop
+
+Cmps=$?
+if [[ $Cmps -eq 2 ]]
+then # shext failed, fall back to cmp
+    cmp $OrigArgs ; Cmps=$?
+else
+    Cmps=$(( ! Cmps ))
+fi
+exit $Cmps
