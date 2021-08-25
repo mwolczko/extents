@@ -1,6 +1,6 @@
 #!/bin/bash -p 
 
-#trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$' 0
+trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$' 0
 trap exit 2 15
 
 TEST_DIR=/mnt/img

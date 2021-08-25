@@ -1,4 +1,4 @@
-#!/bin/bash -p 
+#!/bin/bash -p
 
 # Clone-aware cmp
 
@@ -51,7 +51,7 @@ do
 	    VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
 	    AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
 	    shift;;
-	-n|--bytes) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
+	-n|--bytes) CMPOPTS="$CMPOPTS -n $OPTARG"; shift 2;;
 	-s|--quiet|silent) AWK="'{}'"; shift;;
 	-v|--version) version; exit;;
 	--) shift; break;;
@@ -64,10 +64,10 @@ then AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3
 fi
 
 case $# in
-    0) echo 1 file - call cmp; exit;; # XXX
-    1) A="$1" B="$2";;
-    2) A="$1" B="$2" ExtArgs="$ExtArgs -i $3";;
-    3) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
+    1) echo 1 file - call cmp; exit;; # XXX
+    2) A="$1" B="$2";;
+    3) A="$1" B="$2" ExtArgs="$ExtArgs -i $3";;
+    4) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
     *) usage ; exit ;;
 esac
 
@@ -87,11 +87,11 @@ cmpAwkLoop() {
 }
 
 PATH=`dirname $0`":$PATH" # add to PATH for extents
-extents $ExtOpts "$A" "$B" | cmpAwkLoop
+extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
 
 Cmps=$?
-if [[ $Cmps -eq 2 ]]
-then # shext failed, fall back to cmp
+if [[ ${PIPESTATUS[0]} -ne 0 ]]
+then # extents failed, fall back to cmp
     cmp $OrigArgs ; Cmps=$?
 else
     Cmps=$(( ! Cmps ))

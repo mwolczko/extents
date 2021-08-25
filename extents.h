@@ -21,7 +21,7 @@ struct fileinfo {
   int argno;     // which arg (starting at 0)
   int fd;        // open fd
   off_t size;    // file size from stat(2)
-  int n_exts;    // # extents
+  unsigned n_exts;    // # extents
   extent **exts; // ptr to array of extents
   list *unsh; // unshared extents
 };

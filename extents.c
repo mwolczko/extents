@@ -24,6 +24,7 @@
 #include "extents.h"
 
 int block_size, nfiles, n_ext= 0;
+off_t max_cmp= -1, skip1= 0, skip2= 0;
 
 fileinfo *info; // ptr to array of files' info of size nfiles
 
@@ -42,7 +43,7 @@ list *shared; // list of list of extents
     do { stmt; } while (0);		     \
   }
 
-#define USAGE "usage: %s [-c|--cmp] [-f] [-h|--help] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 FILE2 ...\n"
+#define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n  [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
 
 void usage(char *p) {
   fail(USAGE, p);
@@ -54,34 +55,54 @@ void print_help(char *progname)
   printf(USAGE, progname);
   printf("\nWith a single FILE, prints information about each extent.\n");
   printf("For multiple FILEs, determines which extents are shared and prints information about shared and unshared extents.\n");
-  printf("An extent is described by:\n");
+  printf("An extent is a contiguous area of physical storage and is described by:\n");
   printf("  n if it belongs to FILEn (omitted for only a single file);\n");
-  printf("  The logical offset in the file at which it begins;\n");
-  printf("  The physical offset on the underlying device at which it begins (if -p or --print_phys_addr is specified);\n");
-  printf("  Length.\nOffsets and length are in bytes.\n");
+  printf("  the logical offset in the file at which it begins;\n");
+  printf("  the physical offset on the underlying device at which it begins (if -p or --print_phys_addr is specified);\n");
+  printf("  its length.\nOffsets and lengths are in bytes.\n");
   printf("OS-specific flags are also printed (unless suppressed with -f or --no_flags). Flags are available only on Linux and are described in /usr/include/linux/fiemap.h.\n\n");
   printf("Options:\n");
-  printf("-c --cmp                  (two files only) output unshared regions to be compared by cmp\n");
-  printf("-f                        don't print (1 file) or print (>1 file) OS-specific flags\n");
-  printf("-h --help                 print help (this message)\n");
-  printf("-n --no_headers           don't print human-readable header and line numbers\n");
-  printf("-s --print_shared_only    print only shared extents\n");
-  printf("-u --print_unshared_only  print only unshared extents\n");
+  printf("--bytes LIMIT                      compare at most LIMIT bytes (must be used with -c)\n");
+  printf("-c --cmp                           (two files only) output unshared regions to be compared by cmp\n");
+  printf("-f --flags                         don't print (1 file) or print (>1 file) OS-specific flags\n");
+  printf("-h --help                          print help (this message)\n");
+  printf("-i --ignore-initial SKIP1[:SKIP2}  skip first SKIP1 bytes of file1 (optionally, SKIP2 of file2) -- must be used with -c\n");
+  printf("-n --no_headers                    don't print human-readable headers and line numbers\n");
+  printf("-p --print_phys_addr               print physical address of extents\n");
+  printf("-s --print_shared_only             print only shared extents (>1 file)\n");
+  printf("-u --print_unshared_only           print only unshared extents (>1 file)\n");
   printf("\nMario Wolczko, Oracle, Aug 2021\n");
   exit(0);
 }
 
 void args(int argc, char *argv[])
 {
-  struct option longopts[]= { { "cmp_output",          false, NULL, 'c' },
-			      { "help",                false, NULL, 'h' },
-			      { "no_headers",          false, NULL, 'n' },
-			      { "print_phys_addr",     false, NULL, 'p'},
-			      { "print_shared_only",   false, NULL, 's' },
-			      { "print_unshared_only", false, NULL, 'u' },
+  struct option longopts[]= { { "bytes",          required_argument, NULL, 'b' },
+			      { "cmp",                  no_argument, NULL, 'c' },
+			      { "flags"     ,           no_argument, NULL, 'f' },
+			      { "help",                 no_argument, NULL, 'h' },
+			      { "ignore-initial", required_argument, NULL, 'i' },
+			      { "no_headers",           no_argument, NULL, 'n' },
+			      { "print_phys_addr",      no_argument, NULL, 'p' },
+			      { "print_shared_only",    no_argument, NULL, 's' },
+			      { "print_unshared_only",  no_argument, NULL, 'u' },
   };
-  for (int c; c= getopt_long(argc, argv, "cfhnpsu", longopts, NULL), c != -1; )
+  for (int c; c= getopt_long(argc, argv, "cfhnpsub:i:", longopts, NULL), c != -1; )
     switch (c) {
+    case 'b':
+      if (sscanf(optarg, "%ld", &max_cmp) != 1 || max_cmp <= 0)
+	fail("arg to -b|--bytes must be positive integer\n");
+      break;
+    case 'i':
+      if (sscanf(optarg, "%ld:%ld", &skip1, &skip2) != 2) {
+	if (sscanf(optarg, "%ld", &skip1) == 1) {
+	  skip2= skip1;
+	} else
+	  skip1= -1;
+      }
+      if (skip1 < 0 || skip2 < 0)
+	fail("arg to -i must be N or N:M (N,M non-negative integers)\n");
+      break;
     case 'c': cmp_output=          true; break;
     case 'f': print_flags=        false; break;
     case 'h': print_help(argv[0])      ; break;
@@ -118,6 +139,8 @@ void *first(list *s) { assert(!is_empty(s)); return s->elems[0]; }
 void *only(list *s) { assert(is_singleton(s)); return first(s); }
 
 void *last(list *s) { return s->elems[n_elems(s) - 1]; }
+
+off_t end_l(extent *e) { return e->l + e->len; }
 
 off_t end_p(extent *e) { return e->p + e->len; }
 
@@ -277,8 +300,15 @@ void read_ext(char *fn[])
       fail("block size weirdness! %d v %d\n", block_size, sb.st_blksize);
     info[i].size= sb.st_size;
     get_extents(&info[i]);
-    n_ext += info[i].n_exts;
-    info[i].unsh= new_list(-info[i].n_exts);
+    unsigned n= info[i].n_exts;
+    if (n > 0) {
+      extent *last_e= info[i].exts[n - 1];
+      off_t end_last= end_l(last_e);
+      if (end_last > sb.st_size) // truncate last extent to file size
+	last_e->len -= (end_last - sb.st_size);
+    }
+    n_ext += n;
+    info[i].unsh= new_list(-n);
   }
 }
 
@@ -520,6 +550,88 @@ void log_sort(list *ll)
   qsort(ll->elems, ll->nelems, sizeof(void *), (__compar_fn_t)&ext_list_cmp_log);
 }
 
+struct ecmp {
+  list *lst;
+  extent e;
+  off_t skip;
+  unsigned i;
+  bool at_end;
+} f1, f2;
+
+void swap() { struct ecmp tmp= f1; f1= f2; f2= tmp; }
+
+bool advance(struct ecmp *ec)
+{
+  if (ec->i < n_elems(ec->lst)) {
+    ec->e= *(extent *)get(ec->lst, ec->i++);
+    off_t max_off= ec->skip + max_cmp;
+    if (ec->e.l >= max_off)
+      ec->at_end= true;
+    else {
+      ec->at_end= false;
+      if (end_l(&ec->e) > max_off)
+	ec->e.len= max_off - ec->e.l;
+    }
+  } else
+    ec->at_end= true;
+  return !ec->at_end;
+}
+
+void init(struct ecmp *ec, list *l, off_t skip, off_t size)
+{
+  ec->lst= l; ec->skip= skip; ec->i= 0;
+  while (advance(ec) && end_l(&ec->e) <= ec->skip) 
+    ;
+  if (!ec->at_end && ec->e.l < ec->skip) { // trim off before skip
+    int head= ec->skip - ec->e.l;
+    ec->e.l += head;
+    ec->e.len -= head;
+  }
+}
+
+void report(off_t start, off_t len)
+{
+  printf("%ld %ld\n", start, len);
+}
+
+// trunc at max_cmp
+void generate_cmp_output()
+{
+  if (max_cmp < 0) {
+      off_t size1= info[0].size - skip1, size2= info[1].size - skip2;     
+      max_cmp= size1 > size2 ? size1 : size2;
+  }
+  init(&f1, info[0].unsh, skip1, info[0].size);
+  init(&f2, info[1].unsh, skip2, info[1].size);
+  while (!f1.at_end && !f2.at_end) {
+    if (f1.e.l > f2.e.l) swap();
+    if (end_l(&f1.e) <= f2.e.l) { 
+      report(f1.e.l, f1.e.len);
+      if (!advance(&f1)) break;
+    } else if (f1.e.l < f2.e.l) { 
+      int head= f2.e.l - f1.e.l;
+      report(f1.e.l, head);
+      f1.e.l= f2.e.l; f1.e.len -= head;
+    } else {
+      if (f1.e.len > f2.e.len) swap();
+      if (f1.e.len < f2.e.len) {
+        report(f1.e.l, f1.e.len);
+        f2.e.l= end_l(&f1.e); f2.e.len -= f1.e.len;
+        if (!advance(&f1)) break;
+      } else { // same start and len
+        report(f1.e.l, f1.e.len);
+	advance(&f1); advance(&f2);
+	if (f1.at_end || f2.at_end) break;
+      }
+    }
+  }
+  if (f1.at_end) f1= f2;
+  while (!f1.at_end) {
+    report(f1.e.l, f1.e.len);
+    advance(&f1);
+  }
+}
+
 int main(int argc, char *argv[])
 {
   args(argc, argv);
@@ -533,10 +645,9 @@ int main(int argc, char *argv[])
     find_shares();
     ITER(shared, sh_list, fileno_sort((list*)sh_list););
     log_sort(shared);
-    if (cmp_output) {
-
-
-    } else {
+    if (cmp_output) 
+      generate_cmp_output();
+    else {
       if (!print_unshared_only) print_shared_extents();
       if (!print_shared_only) print_unshared_extents();
     }
