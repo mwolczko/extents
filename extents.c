@@ -23,7 +23,8 @@
 #include "fiemap.h"
 #include "extents.h"
 
-int block_size, nfiles, n_ext= 0;
+blksize_t block_size;
+unsigned nfiles, n_ext= 0;
 off_t max_cmp= -1, skip1= 0, skip2= 0;
 
 fileinfo *info; // ptr to array of files' info of size nfiles
@@ -37,10 +38,10 @@ bool print_flags        = true,
 
 list *shared; // list of list of extents
 
-#define ITER(es, elem, stmt)		     \
-  for (int _i= 0; _i < (es)->nelems; ++_i) { \
-    extent *elem= get((es), _i);	     \
-    do { stmt; } while (0);		     \
+#define ITER(es, elem, stmt)		          \
+  for (unsigned _i= 0; _i < (es)->nelems; ++_i) { \
+    extent *elem= get((es), _i);	          \
+    do { stmt; } while (0);		          \
   }
 
 #define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n  [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
@@ -112,7 +113,7 @@ void args(int argc, char *argv[])
     case 'u': print_unshared_only= true; break;
     default: usage(argv[0]);
     }
-  nfiles= argc - optind;
+  nfiles= (unsigned)(argc - optind);
   if (nfiles < 1) usage(argv[0]);
   if (print_shared_only && print_unshared_only)
     fail("Must choose only one of -s (--print_shared_only) and -u (--print_unshared_only)\n");
@@ -124,9 +125,9 @@ void args(int argc, char *argv[])
 
 unsigned n_elems(list *ps) { return ps->nelems; }
 
-void *get(list *ps, int i) { assert(n_elems(ps) > i); return ps->elems[i]; }
+void *get(list *ps, unsigned i) { assert(n_elems(ps) > i); return ps->elems[i]; }
 
-void put(list *ps, int i, void *e) { assert(n_elems(ps) > i); ps->elems[i]= e; }
+void put(list *ps, unsigned i, void *e) { assert(n_elems(ps) > i); ps->elems[i]= e; }
 
 bool is_empty(list *s) { return n_elems(s) == 0; }
 
@@ -194,7 +195,7 @@ void print_header2() {
   printf(STRING_FIELD_FMT " ", "");
 }
 
-void print_header(int i, char *h) {
+void print_header(unsigned i, char *h) {
   puts(info[i].name); 
   print_header1(h, true);
   putchar('\n');
@@ -204,9 +205,9 @@ void print_header(int i, char *h) {
 
 void print_extents_by_file()
 {
-  for (int i= 0; i < nfiles; i++) {
+  for (unsigned i= 0; i < nfiles; i++) {
     if (!no_headers) print_header(i, "#");
-    for (int e= 0; e < info[i].n_exts; ++e) {
+    for (unsigned e= 0; e < info[i].n_exts; ++e) {
       extent *ext= info[i].exts[e];
       if (ext->nxt_sh == NULL) {
 	if (!no_headers)
@@ -236,7 +237,7 @@ void print_shared_extents()
     }
     putchar('\n');
   }
-  int e= 1;
+  unsigned e= 1;
   ITER(shared, sh_list, {
       if (!no_headers) printf(LINENO_FMT "d ", e++);
       ITER((list*)sh_list, elem, {
@@ -261,7 +262,7 @@ void print_unshared_extents()
   putchar('\n');
   if (!no_headers)
     puts("Not Shared:");
-  for (int i= 0; i < nfiles; i++) {
+  for (unsigned i= 0; i < nfiles; i++) {
     if (!is_empty(info[i].unsh)) {
       if (!no_headers) print_header(i, "File");
       ITER(info[i].unsh, ext, {
@@ -283,12 +284,12 @@ void print_set(extents *ps)
 void read_ext(char *fn[])
 {
   info= calloc_s(nfiles, sizeof(fileinfo));
-  for (int i= 0; i < nfiles; ++i) {
+  for (unsigned i= 0; i < nfiles; ++i) {
     char *name= fn[i];
     int fd= open(name, O_RDONLY);
     if (fd < 0)
       fail("Can't open file %s : %s\n", name, strerror(errno));
-    info[i].name= name; info[i].fd= fd; info[i].argno= i;
+    info[i].name= name; info[i].fd= (unsigned)fd; info[i].argno= i;
     struct stat sb;
     if (fstat(fd, &sb) < 0)
       fail("Can't stat %s : %s\n", name, strerror(errno));
@@ -308,7 +309,7 @@ void read_ext(char *fn[])
 	last_e->len -= (end_last - sb.st_size);
     }
     n_ext += n;
-    info[i].unsh= new_list(-n);
+    info[i].unsh= new_list(-(int)n);
   }
 }
 
@@ -319,7 +320,7 @@ int ext_cmp_phys(extent **a, extent **b)
 
 void phys_sort()
 {
-  for (int i= 0; i < nfiles; ++i) {
+  for (unsigned i= 0; i < nfiles; ++i) {
     qsort(info[i].exts, info[i].n_exts, sizeof(extent *), (__compar_fn_t)&ext_cmp_phys);
   }
 }
@@ -331,6 +332,7 @@ list *add(list *ps, void *e) {
     ps= realloc(ps, sizeof(list) - ps->max_sz * sizeof(void *));
   }
   put(ps, ps->nelems++, e);
+  return ps;
 }
 
 void add_unshared(extent *e)
@@ -340,8 +342,8 @@ void add_unshared(extent *e)
 
 // the first extent from each file
 list *all() {
-  list *ps= new_list(nfiles);
-  for (int i= 0; i < nfiles; ++i)
+  list *ps= new_list((int)nfiles);
+  for (unsigned i= 0; i < nfiles; ++i)
     if (info[i].n_exts > 0)
       ps= add(ps, info[i].exts[0]);
   return ps;
@@ -351,7 +353,7 @@ typedef bool (*filter_t)(extent *);
 
 list *filter(list *ps, filter_t f)
 {
-  list *res = new_list(nfiles);
+  list *res = new_list((int)nfiles);
   ITER(ps, elem, 
       if ((*f)(elem)) {
 	res= add(res, elem);
@@ -403,7 +405,7 @@ list *find_shortest(list *a)
 
 list *remove_elem(list *ps, extent *e)
 {
-  list *new= new_list(nfiles);
+  list *new= new_list((int)nfiles);
   ITER(ps, elem, if (elem != e) new= add(new, elem););
   assert(n_elems(new) == n_elems(ps) - 1);
   return new;
@@ -413,7 +415,7 @@ list *move_next(list *ps, extent *e)
 {
   list *del= remove_elem(ps, e);
   fileinfo *info= e->info;
-  int n;
+  unsigned n;
   for (n= 0; n < info->n_exts; ++n)
     if (info->exts[n] == e)
       break;
@@ -430,7 +432,7 @@ extent *split(extent *e, off_t end)
   head->l= e->l;
   head->p= e->p;
   head->len= end - e->p;
-  head->flags= e->flags; // ?
+  head->flags= e->flags; // ? make no sense for, eg, LAST
   head->nxt_sh= NULL;
   e->p= end;
   e->l += head->len;
@@ -441,7 +443,7 @@ extent *split(extent *e, off_t end)
 // check that e is on a ring 
 void validate(extent *e)
 {
-  int i= 0;
+  unsigned i= 0;
   extent *n= e;
   do {
     assert(n != NULL);
@@ -472,7 +474,7 @@ void fileno_sort(list *ps)
 void find_shares()
 {
   list *curr= all();
-  shared= new_list(n_ext);
+  shared= new_list((int)n_ext);
   do {
     DBG_PRINTS("loop head:", curr);
     list *low= find_lowest_p(curr);
@@ -511,7 +513,7 @@ void find_shares()
       DBG_PRINT("first:", frst);
       off_t end= end_p(frst);
       unsigned ring_len= 0;
-      list *share= new_list(nfiles); // list of extent*
+      list *share= new_list((int)nfiles); // list of extent*
       ITER(shortest, s, {
 	  curr= move_next(curr, s);
 	  low= remove_elem(low, s);
@@ -583,7 +585,7 @@ void init(struct ecmp *ec, list *l, off_t skip, off_t size)
   while (advance(ec) && end_l(&ec->e) <= ec->skip) 
     ;
   if (!ec->at_end && ec->e.l < ec->skip) { // trim off before skip
-    int head= ec->skip - ec->e.l;
+    off_t head= ec->skip - ec->e.l;
     ec->e.l += head;
     ec->e.len -= head;
   }
@@ -609,7 +611,7 @@ void generate_cmp_output()
       report(f1.e.l, f1.e.len);
       if (!advance(&f1)) break;
     } else if (f1.e.l < f2.e.l) { 
-      int head= f2.e.l - f1.e.l;
+      off_t head= f2.e.l - f1.e.l;
       report(f1.e.l, head);
       f1.e.l= f2.e.l; f1.e.len -= head;
     } else {

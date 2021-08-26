@@ -12,14 +12,14 @@ struct extent {
   off_t l;         // logical offset
   off_t p;         // physical offset on device
   off_t len;
-  int flags;
+  unsigned flags;
   extent *nxt_sh;  // link to other extents which share data
 };
 
 struct fileinfo {
   char *name;    // filename
-  int argno;     // which arg (starting at 0)
-  int fd;        // open fd
+  unsigned argno;     // which arg (starting at 0)
+  unsigned fd;        // open fd
   off_t size;    // file size from stat(2)
   unsigned n_exts;    // # extents
   extent **exts; // ptr to array of extents
@@ -27,7 +27,8 @@ struct fileinfo {
 };
 
 struct list {
-  unsigned nelems, max_sz;
+  unsigned nelems;
+  int max_sz; // negative means growable
   void *elems[];
 };
 
