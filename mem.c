@@ -9,6 +9,14 @@ void *malloc_s(size_t size)
   return res;
 }
 
+void *alloca_s(size_t size)
+{
+  void *res= alloca(size);
+  if (res == NULL)
+    fail("alloca failed!\n");
+  return res;
+}
+
 void *calloc_s(size_t n, size_t size)
 {
   void *res= calloc(n, size);

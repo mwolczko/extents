@@ -4,26 +4,28 @@
 #include <sys/types.h>
 
 typedef struct fileinfo fileinfo;
-typedef struct extent extent;
+typedef struct extent extent; 
 typedef struct list list;
+typedef struct sh_ext sh_ext; 
 
+// a raw extent from a specific file
 struct extent {
   fileinfo *info;  // the file this belongs to
   off_t l;         // logical offset
   off_t p;         // physical offset on device
   off_t len;
   unsigned flags;
-  extent *nxt_sh;  // link to other extents which share data
 };
 
+// description of file
 struct fileinfo {
-  char *name;    // filename
+  char *name;         // filename
   unsigned argno;     // which arg (starting at 0)
   unsigned fd;        // open fd
-  off_t size;    // file size from stat(2)
+  off_t size;         // file size from stat(2)
   unsigned n_exts;    // # extents
-  extent **exts; // ptr to array of extents
-  list *unsh; // unshared extents
+  extent *exts;       // ptr to first extent in array
+  list *unsh;         // unshared extents
 };
 
 struct list {
@@ -31,5 +33,28 @@ struct list {
   int max_sz; // negative means growable
   void *elems[];
 };
+
+/*struct owner {
+  fileinfo *info;  // the file this belongs to
+  off_t l;         // logical offset
+  unsigned flags;
+  }*/ 
+
+// an extent with its sharing info
+struct sh_ext {
+  off_t p;         // physical offset on device
+  off_t len;
+  list *owners;    // the original extents from whence it came
+};
+
+#define min(a,b) ({                                     \
+      __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); \
+      _a < _b ? _a : _b; })
+
+#define max(a,b) ({                                     \
+      __typeof__ (a) _a = (a); __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
+extern blksize_t blk_sz;
 
 #endif

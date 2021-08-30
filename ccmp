@@ -2,8 +2,6 @@
 
 # Clone-aware cmp
 
-# ccmp <opts> file1 file2
-
 version() { echo ccmp v1.0 Aug 2021; }
 
 help() {

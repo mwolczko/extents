@@ -3,9 +3,11 @@ OS := $(shell uname)
 export O_CFLAGS := $(CFLAGS)
 CFLAGS := -I$(OS) -I. -g
 
+all : extents
+
 extents : extents.o fail.o mem.o $(OS)/fiemap.o
 
-extents.o : extents.c extents.h fail.h mem.h $(OS)/fiemap.h
+extents.o : extents.c extents.h fail.h mem.h fiemap.h
 
 fail.o : fail.c
 
