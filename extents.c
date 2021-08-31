@@ -158,6 +158,7 @@ static off_t end_p(extent *e) { return e->p + e->len; }
 
 // -ve max_sz means growable, abs value is initial size
 static list *new_list(int max_sz) {
+  assert(max_sz != 0);
   unsigned max_sz_abs = max_sz < 0 ? -max_sz : max_sz;
   list *ps= malloc_s(sizeof(list) + max_sz_abs * sizeof(void *));
   ps->nelems= 0;
@@ -182,7 +183,7 @@ static list *append(list *ps, void *e) {
 #define FILENO_WIDTH_S "4"
 #define SEP "  "
 
-static void print(extent *e)
+static void print_extent(extent *e)
 {
   char filenobuf[10];
   off_t log= e->l, ph= e->p, len= e->len;
@@ -197,6 +198,24 @@ static void print(extent *e)
       ? "%s%" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld "
       : "%s%" FIELD_WIDTH_S "ld %4$" FIELD_WIDTH_S "ld ";
       printf(fmt, fileno, log, ph, len);
+  }
+}
+
+static void print_sh_ext(off_t p, off_t len, extent *owner)
+{
+  char filenobuf[10];
+  off_t l= p - owner->p + owner->l;
+  char *fileno= nfiles == 1 ? ""
+    : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", owner->info->argno+1),
+       filenobuf);
+  if (no_headers) {
+    char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
+    printf(fmt, fileno, l, p, len);
+  } else {
+    char *fmt= print_phys_addr
+      ? "%s%" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld "
+      : "%s%" FIELD_WIDTH_S "ld %4$" FIELD_WIDTH_S "ld ";
+      printf(fmt, fileno, l, p, len);
   }
 }
 
@@ -239,7 +258,7 @@ static void print_extents_by_file()
     for (unsigned e= 0; e < info[i].n_exts; ++e) {
       extent *ext= &info[i].exts[e];
       if (!no_headers) printf("%" FILENO_WIDTH_S "d ", e+1);
-      print(ext);
+      print_extent(ext);
       if (print_flags) printf("  %s", flag_pr(ext->flags));
       putchar('\n');
     }
@@ -264,19 +283,20 @@ static void print_shared_extents()
     putchar('\n');
   }
   unsigned e= 1;
-  ITER(shared, sh_list, {
+  ITER(shared, sh_elem, {
+      sh_ext *s_e= (sh_ext*) sh_elem;
       if (!no_headers) printf(LINENO_FMT "d ", e++);
-      ITER((list*)sh_list, elem, {
-	    print(elem); fputs(SEP, stdout);
-	    });
+      ITER((list*)s_e->owners, owner, {
+	  print_sh_ext(s_e->p, s_e->len, owner); fputs(SEP, stdout);
+	});
       putchar('\n');
       if (print_flags) {
 	printf(LINENO_FMT "s ", "FLAGS");
-	ITER((list*)sh_list, sh, {
+	ITER((list*)s_e->owners, owner, {
 	    printf("%-*s", FILENO_WIDTH
 		   + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
 		   + (print_phys_addr ? 6 : 5),
-		   flag_pr(sh->flags)); 
+		   flag_pr(owner->flags)); 
 	  });
 	putchar('\n');
       }
@@ -292,7 +312,7 @@ static void print_unshared_extents()
     if (!is_empty(info[i].unsh)) {
       if (!no_headers) print_header(i, "File");
       ITER(info[i].unsh, ext, {
-	  print(ext); putchar('\n');
+	  print_extent(ext); putchar('\n');
 	})
     }
   }
@@ -303,7 +323,7 @@ static void print_unshared_extents()
 void print_set(list *ps)
 {
   for (int i= 0; i < n_elems(ps); ++i) {
-    print(get(ps, i)); fputs("  ", stdout);
+    print_extent(get(ps, i)); fputs("  ", stdout);
   }
 }
 #endif
@@ -340,7 +360,7 @@ static void read_ext(char *fn[])
       extent *last_e= &info[i].exts[n - 1];
       off_t end_last= end_l(last_e);
       if (end_last > sb.st_size) // truncate last extent to file size
-	    last_e->len -= (end_last - sb.st_size);
+	last_e->len -= (end_last - sb.st_size);
     }
     close(fd);
   }
@@ -361,9 +381,9 @@ static int ext_cmp_phys(extent **pa, extent **pb)
     : 0;
 }
 
-// #ifdef _DARWIN_C_SOURCE
+#ifndef linux
 typedef int (* _Nonnull __compar_fn_t)(const void *, const void *);
-// #endif
+#endif
 
 static void phys_sort()
 {
@@ -476,7 +496,7 @@ extent *split(extent *e, off_t end)
 }
 
 #ifdef DEBUG
-#define DBG_PRINT(m, e) {puts(m); print(e); putchar('\n');}
+#define DBG_PRINT(m, e) {puts(m); print_extent(e); putchar('\n');}
 #define DBG_PRINTS(m, ps) {puts(m); print_set(ps); putchar('\n');}
 #else
 #define DBG_PRINT(m, e)
@@ -526,12 +546,12 @@ static void begin_next_e()
     nxt_e= NULL;
 }
 
-static sh_ext *new_sh_ext(off_t p, off_t len, list *owners)
+static sh_ext *new_sh_ext(off_t p, off_t len)
 {
   sh_ext *res= malloc_s(sizeof(sh_ext));
-  res->p=           p;
-  res->len=       len;
-  res->owners= owners;
+  res->p=          p;
+  res->len=      len;
+  res->owners= share;
   return res;
 }
 
@@ -541,7 +561,7 @@ static void advance_e(off_t start, off_t len)
   if (is_singleton(share)) 
     append_unshared(only(share));
   else {
-    sh_ext *ps= new_sh_ext(start, len, share);
+    sh_ext *ps= new_sh_ext(start, len);
     append(shared, ps);
   }
   if (ei < n_elems(extents)) begin_next_e();

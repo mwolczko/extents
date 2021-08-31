@@ -19,6 +19,7 @@ void *alloca_s(size_t size)
 
 void *calloc_s(size_t n, size_t size)
 {
+  if (n == 0) return NULL;
   void *res= calloc(n, size);
   if (res == NULL)
     fail("calloc failed!\n");

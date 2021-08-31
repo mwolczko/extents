@@ -20,8 +20,8 @@ struct extent {
 // description of file
 struct fileinfo {
   char *name;         // filename
-  unsigned argno;     // which arg (starting at 0)
-  unsigned fd;        // open fd
+  unsigned argno;     // which file arg (starting at 0)
+  unsigned fd;        // open fd during read
   off_t size;         // file size from stat(2)
   unsigned n_exts;    // # extents
   extent *exts;       // ptr to first extent in array

@@ -39,14 +39,13 @@ void flags2str(unsigned flags, char *s, size_t n)
 		       "UNWRITTEN",
 		       "MERGED",
 		       "SHARED" };
-  s[0]= '\0';
-  int i;
-  while (i= ffs(flags), i != 0) {
-    flags ^= 1 << (i - 1);
-    strncat(s, nm[i], n);
-    n= max(n - strlen(nm[i]), 0);
-    if (n > 0) strncat(s, " ", n--);
-  }
+  s[0]= '\0'; 
+  for (unsigned i= 0; i < sizeof(f)/sizeof(unsigned); ++i) 
+    if (flags & f[i]) {
+      strncat(s, nm[i], n);
+      n= max(n - strlen(nm[i]), 0);
+      if (n > 0) strncat(s, " ", n--);
+    }
 }
 
 void get_extents(fileinfo *pfi)
@@ -55,14 +54,14 @@ void get_extents(fileinfo *pfi)
   if (ioctl((int)pfi->fd, FS_IOC_FIEMAP, &fm) < 0)
     fail("Can't get extents : %s\n", strerror(errno));
   unsigned n= fm.fm_mapped_extents;
-  struct fiemap *pfm= alloca_s(sizeof(struct fiemap) + n * sizeof(struct fiemap_extent));
+  struct fiemap *pfm= malloc_s(sizeof(struct fiemap) + n * sizeof(struct fiemap_extent));
   pfm->fm_start=          0;
   pfm->fm_length= pfi->size;
   pfm->fm_flags=          0;
   pfm->fm_extent_count=   n;
   if (ioctl(pfi->fd, FS_IOC_FIEMAP, pfm) < 0)
     fail("Can't get list of extents : %s\n", strerror(errno));
-  if (pfm.fm_mapped_extents != n)
+  if (pfm->fm_mapped_extents != n)
     fail("file is changing: %s; number of extents changed\n", pfi->name);
   extent *pe= calloc_s(n, sizeof(extent));
   pfi->n_exts= n;  pfi->exts= pe;
@@ -74,5 +73,6 @@ void get_extents(fileinfo *pfi)
     pe->flags=        pfe->fe_flags;
     ++pe; ++pfe; 
   }
+  free(pfm);
 }
 
