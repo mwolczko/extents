@@ -25,20 +25,14 @@ struct fileinfo {
   off_t size;         // file size from stat(2)
   unsigned n_exts;    // # extents
   extent *exts;       // ptr to first extent in array
-  list *unsh;         // unshared extents
+  list *unsh;         // unshared extents, list of sh_ext (solely owned by this file)
 };
 
 struct list {
   unsigned nelems;
   int max_sz; // negative means growable
-  void *elems[];
+  void **elems;
 };
-
-/*struct owner {
-  fileinfo *info;  // the file this belongs to
-  off_t l;         // logical offset
-  unsigned flags;
-  }*/ 
 
 // an extent with its sharing info
 struct sh_ext {

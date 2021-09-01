@@ -3,13 +3,16 @@
 trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$' 0
 trap exit 2 15
 
-TEST_DIR=/mnt/img
+TEST_DIR=${TEST_DIR:-/mnt/img}
 T=$TEST_DIR/testfile$$.
 
 # make a file
 dd if=/dev/zero of=${T}0 count=2048 2>/dev/null
 
-CP="cp --reflink"
+case `uname` in
+Linux)  CP="cp --reflink" ;;
+Darwin) CP="cp -c" ;;
+esac
 
 # clone it a few times
 $CP ${T}0 ${T}1 # same
