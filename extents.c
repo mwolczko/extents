@@ -30,7 +30,7 @@ static off_t max_cmp= -1, skip1= 0, skip2= 0;
 
 static fileinfo *info; // ptr to array of files' info of size nfiles
 
-static list *extents; // list of extent*
+static list *extents; // list of all extent* from all files
 
 static bool
   print_flags        = false,
@@ -42,9 +42,9 @@ static bool
 
 static list *shared; // list of sh_ext*
 
-#define ITER(es, EL_T, elem, stmt)                      \
+#define ITER(es, EL_T, elem, stmt)                \
   for (unsigned _i= 0; _i < (es)->nelems; ++_i) { \
-    EL_T (elem)= get((es), _i);                  \
+    EL_T (elem)= get((es), _i);                   \
     do { stmt; } while (0);                       \
   }
 
@@ -54,7 +54,8 @@ static list *shared; // list of sh_ext*
 #define OFF_T "%lld"
 #endif
 
-#define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n  [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
+#define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n"\
+              "          [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
 
 static void usage(char *p) { fail(USAGE, p); }
 
@@ -87,7 +88,8 @@ static void args(int argc, char *argv[])
 {
     struct option longopts[]= {
             { "bytes",          required_argument, NULL, 'b' },
-            { "cmp",                  no_argument, NULL, 'c' },{ "flags"     ,           no_argument, NULL, 'f' },
+            { "cmp",                  no_argument, NULL, 'c' },
+            { "flags"     ,           no_argument, NULL, 'f' },
             { "help",                 no_argument, NULL, 'h' },
             { "ignore-initial", required_argument, NULL, 'i' },
             { "no_headers",           no_argument, NULL, 'n' },
@@ -113,12 +115,12 @@ static void args(int argc, char *argv[])
             break;
         case 'c': cmp_output=          true; break;
         case 'f': print_flags=         true; break;
-        case 'h': print_help(argv[0])      ; break;
         case 'n': no_headers=          true; break;
         case 'p': print_phys_addr=     true; break;
         case 's': print_shared_only=   true; break;
         case 'u': print_unshared_only= true; break;
-        default: usage(argv[0]);
+        case 'h': print_help(argv[0]); break;
+        default : usage(argv[0]);
     }
     nfiles= (unsigned)(argc - optind);
     if (nfiles < 1) usage(argv[0]);
@@ -128,6 +130,7 @@ static void args(int argc, char *argv[])
         fail("Must have two files with -c (--cmp_output)\n");
 }
 
+//functions on lists
 static unsigned n_elems(list *ps) { return ps->nelems; }
 
 #define GET(ps, i) ((ps)->elems[i])
@@ -136,11 +139,11 @@ static void *get(list *ps, unsigned i) { assert(n_elems(ps) > i); return GET(ps,
 
 static void put(list *ps, unsigned i, void *e) { assert(n_elems(ps) > i); GET(ps, i)= e; }
 
-static bool is_empty(list *ps) { return n_elems(ps) == 0; }
+static bool is_empty(list *ps)     { return n_elems(ps) == 0; }
 
 static bool is_singleton(list *ps) { return n_elems(ps) == 1; }
 
-static bool is_multiple(list *ps) { return n_elems(ps) > 1; }
+static bool is_multiple(list *ps)  { return n_elems(ps) > 1; }
 
 static void *first(list *ps) { assert(!is_empty(ps)); return GET(ps, 0); }
 
@@ -178,16 +181,16 @@ static list *append(list *ps, void *e) {
 typedef int (* _Nonnull __compar_fn_t)(const void *, const void *);
 #endif
 
-static int ext_list_cmp_log(sh_ext **a, sh_ext **b) {
+static int sh_ext_list_cmp_log(sh_ext **a, sh_ext **b) {
     extent *fa= first((*a)->owners), *fb= first((*b)->owners);
     return fa->l > fb->l ? 1 : fa->l < fb->l ? -1 : 0;
 }
 
-static void log_sort(list *ll) {
-    qsort(ll->elems, ll->nelems, sizeof(void *), (__compar_fn_t) &ext_list_cmp_log);
+static void log_sort(list *l) {
+    qsort(l->elems, l->nelems, sizeof(void *), (__compar_fn_t) &sh_ext_list_cmp_log);
 }
 
-static int ext_cmp_phys(extent **pa, extent **pb)
+static int extent_list_cmp_phys(extent **pa, extent **pb)
 {
     extent *a= *pa, *b= *pb;
     return a->p > b->p ? 1
@@ -198,7 +201,17 @@ static int ext_cmp_phys(extent **pa, extent **pb)
 }
 
 static void phys_sort() {
-    qsort(&GET(extents, 0), n_ext, sizeof(extent *), (__compar_fn_t) &ext_cmp_phys);
+    qsort(&GET(extents, 0), n_ext, sizeof(extent *), (__compar_fn_t) &extent_list_cmp_phys);
+}
+
+static int extent_list_cmp_fileno(extent **a, extent **b) {
+    return (*a)->info->argno > (*b)->info->argno ?  1
+         : (*a)->info->argno < (*b)->info->argno ? -1
+         : 0;
+}
+
+static void fileno_sort(list *ps) {
+    qsort(ps->elems, ps->nelems, sizeof(void *), (__compar_fn_t) &extent_list_cmp_fileno);
 }
 
 #define LINENO_FMT "%-6"
@@ -228,8 +241,7 @@ static void print_sh_ext(off_t p, off_t len, extent *owner) {
     char filenobuf[10];
     off_t l= p - owner->p + owner->l;
     char *fileno= nfiles == 1 ? ""
-                               : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ",
-                                          owner->info->argno + 1),
+            : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", owner->info->argno + 1),
                     filenobuf);
     if (no_headers) {
         char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
@@ -248,8 +260,7 @@ static void print_header1(char *s, bool f) {
     printf("%" FILENO_WIDTH_S "s " STRING_FIELD_FMT " ", s ? s : "File", "Logical");
     if (print_phys_addr) printf(STRING_FIELD_FMT " ", "Physical");
     printf(STRING_FIELD_FMT " ", "Length");
-    if (print_flags && f)
-        fputs("  Flags", stdout);
+    if (print_flags && f) fputs("  Flags", stdout);
 }
 
 static void print_header2() {
@@ -313,8 +324,7 @@ static void print_shared_extents() {
         });
         putchar('\n');
         if (print_flags) {
-            printf(LINENO_FMT
-            "s ", "FLAGS");
+            printf(LINENO_FMT "s ", "FLAGS");
             ITER(s_e->owners, extent*, owner, {
                     printf("%-*s", FILENO_WIDTH
                                    + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
@@ -327,8 +337,7 @@ static void print_shared_extents() {
 }
 
 static void print_unshared_extents() {
-    if (!no_headers)
-        puts("Not Shared:");
+    if (!no_headers) puts("Not Shared:");
     for (unsigned i= 0; i < nfiles; i++) {
         list *unsh= info[i].unsh;
         if (!is_empty(unsh)) {
@@ -344,40 +353,25 @@ static void print_unshared_extents() {
     }
 }
 
-// ???
-#ifdef DEBUG
-void print_set(list *ps)
-{
-  for (int i= 0; i < n_elems(ps); ++i) {
-    print_extent(get(ps, i)); fputs("  ", stdout);
-  }
-}
-#endif
-
 static void read_ext(char *fn[]) {
     info= calloc_s(nfiles, sizeof(fileinfo));
     for (unsigned i= 0; i < nfiles; ++i) {
         char *name= fn[i];
         int fd= open(name, O_RDONLY);
-        if (fd < 0)
-            fail("Can't open file %s : %s\n", name, strerror(errno));
+        if (fd < 0) fail("Can't open file %s : %s\n", name, strerror(errno));
         info[i].name= name;
         info[i].fd= (unsigned) fd;
         info[i].argno= i;
         info[i].exts= NULL;
         info[i].unsh= new_list(-4); // ???;
         struct stat sb;
-        if (fstat(fd, &sb) < 0)
-            fail("Can't stat %s : %s\n", name, strerror(errno));
-        if ((sb.st_mode & S_IFMT) != S_IFREG)
-            fail("%s: Not a regular file\n", name);
+        if (fstat(fd, &sb) < 0) fail("Can't stat %s : %s\n", name, strerror(errno));
+        if ((sb.st_mode & S_IFMT) != S_IFREG) fail("%s: Not a regular file\n", name);
         if (i == 0) {
             device= sb.st_dev;
             blk_sz= sb.st_blksize;
-        } else if (blk_sz != sb.st_blksize)
-            fail("block size weirdness! %d v %d\n", blk_sz, sb.st_blksize);
-        else if (device != sb.st_dev)
-            fail("Error: All files must be on the same filesystem!\n");
+        } else if (blk_sz != sb.st_blksize) fail("block size weirdness! %d v %d\n", blk_sz, sb.st_blksize);
+        else if (device != sb.st_dev) fail("Error: All files must be on the same filesystem!\n");
         info[i].size= sb.st_size;
         get_extents(&info[i]);
         unsigned n= info[i].n_exts;
@@ -396,34 +390,22 @@ static void read_ext(char *fn[]) {
             append(extents, &info[i].exts[e]);
 }
 
-static void add_to_unshared(sh_ext *sh) {
-    extent *owner= only(sh->owners);
-    append(owner->info->unsh, sh);
-}
-
-static void add_to_shared(sh_ext *s) {
-    append(shared, s);
-}
-
-static int ext_cmp_fileno(extent **a, extent **b) {
-    return
-      (*a)->info->argno > (*b)->info->argno ?  1
-    : (*a)->info->argno < (*b)->info->argno ? -1
-    : 0;
-}
-
-static void fileno_sort(list *ps) {
-    qsort(ps->elems, ps->nelems, sizeof(void *), (__compar_fn_t) &ext_cmp_fileno);
-}
+/*
+ * determine extent sharing -- here to find_shares()
+ *
+ * This algorithm takes a single list of all extents (variable: extents), and sorts it by physical address.
+ * It then works through the list, comparing the current sh_ext (expressed in terms of its components) with the
+ * next extent.  This can either (a) cause the current sh_ext to be finished (if it completely precedes the next extent),
+ * (b) if the current sh_ext overlaps the next extent then it is split into the part which precedes it and the remainder,
+ * (c) if the current sh_ext begins at the same offset as the next extent but is shorter, the next extent is split and
+ * the first part merged into the current sh_ext, or (d) the current sh_ext and next extent are the same, and the next
+ * is merged into the current.
+ */
 
 // components of the current shared extent being processed
 static off_t start, len, end;
 static list *owners; // list of extent*
 static extent *cur_e;
-
-// next extent under consideration
-static unsigned ei;
-static extent *nxt_e;
 
 static void append_owner(extent *e) {
     append(owners, e);
@@ -433,6 +415,10 @@ static void new_owner(extent *e) {
     owners= new_list(-4);
     append_owner(e);
 }
+
+// next extent under consideration
+static unsigned ei;
+static extent *nxt_e; // = get(extents, ei), or NULL if at end
 
 static void next_extent() {
     nxt_e = ++ei < n_elems(extents) ? get(extents, ei) : NULL;
@@ -455,6 +441,13 @@ static sh_ext *new_sh_ext() {
     return res;
 }
 
+static void add_to_shared(sh_ext *s) { append(shared, s); } // XXX also add to unshared, for -c with skip(s)
+
+static void add_to_unshared(sh_ext *sh) {
+    extent *owner= only(sh->owners);
+    append(owner->info->unsh, sh);
+}
+
 static void process_current() {
     assert(!is_empty(owners));
     sh_ext *s= new_sh_ext();
@@ -465,19 +458,14 @@ static void process_current() {
     if (ei < n_elems(extents)) begin_next();
 }
 
-static void swap_e(extent **a, extent **b) {
-    extent *t= *a;
-    *b= *a;
-    *b= t;
-}
+static void swap_e(extent **a, extent **b) { extent *t= *a; *b= *a; *b= t; }
 
 // add a new extent to the list in the right place
 static void insert(extent *e) {
     unsigned i, n= n_elems(extents);
-    for (i= ei; i < n && ext_cmp_phys(&e, (extent **) &GET(extents, i)) > 0; ++i)
+    for (i= ei; i < n && extent_list_cmp_phys(&e, (extent **) &GET(extents, i)) > 0; ++i)
         ;
-    if (i == n)
-        append(extents, e);
+    if (i == n) append(extents, e);
     else {
         extent *lst= last(extents);
         memmove(&GET(extents, i + 1), &GET(extents, i), (n - i - 1) * sizeof(extent *));
@@ -491,17 +479,17 @@ static void re_sort() {
     extent **a, **b;
     for (unsigned i= ei;
          i < n_elems(extents) - 1
-         && (a= (extent **) &GET(extents, i), b= (extent **) &GET(extents, i + 1), ext_cmp_phys(a, b) > 0);
+         && (a= (extent **) &GET(extents, i), b= (extent **) &GET(extents, i + 1), extent_list_cmp_phys(a, b) > 0);
          ++i)
         swap_e(a, b);
 }
 
 static extent *new_extent(fileinfo *pfi, off_t l, off_t p, off_t len, unsigned flags) {
     extent *res= malloc_s(sizeof(extent));
-    res->info= pfi;
-    res->l= l;
-    res->p= p;
-    res->len= len;
+    res->info=    pfi;
+    res->l=         l;
+    res->p=         p;
+    res->len=     len;
     res->flags= flags;
     return res;
 }
@@ -509,8 +497,7 @@ static extent *new_extent(fileinfo *pfi, off_t l, off_t p, off_t len, unsigned f
 static void find_shares() {
     shared= new_list(-10); // ?? size
     if (n_ext == 0) return;
-    ei= 0;
-    begin_next();
+    ei= 0; begin_next();
     while (nxt_e != NULL) {
         off_t start_nxt= nxt_e->p;
         //printf("%ld %ld  %ld %ld  ", start, len, start_nxt, nxt_e->len);
@@ -545,51 +532,62 @@ static void find_shares() {
     process_current();
 }
 
+/*
+ * Generating indices for cmp(1).
+ *
+ * XXX
+ */
+
 struct ecmp {
-    list *lst;
-    extent e;
+    list *lst; // list of unshared sh_ext*
+    sh_ext *e;
     off_t skip;
     unsigned i;
     bool at_end;
 } f1, f2;
 
-static void swap() {
-    struct ecmp tmp= f1;
-    f1= f2;
-    f2= tmp;
+static void swap() { struct ecmp tmp= f1; f1= f2; f2= tmp; }
+
+off_t l_sh_ext(sh_ext *e) {
+    extent *owner= only(e->owners);
+    return owner->l + e->p - owner->p;
 }
+
+off_t end_l_sh_ext(sh_ext *e) { return l_sh_ext(e) + e->len; }
 
 static bool advance(struct ecmp *ec) {
     if (ec->i < n_elems(ec->lst)) {
-        ec->e= *(extent *) get(ec->lst, ec->i++);
+        sh_ext *e= (sh_ext *) get(ec->lst, ec->i++);
+        ec->e= e;
         off_t max_off= ec->skip + max_cmp;
-        if (ec->e.l >= max_off)
+        off_t l= l_sh_ext(e);
+        if (l >= max_off)
             ec->at_end= true;
         else {
             ec->at_end= false;
-            if (end_l(&ec->e) > max_off)
-                ec->e.len= max_off - ec->e.l;
+            if (l + e->len > max_off)
+                e->len= max_off - l;
         }
     } else
         ec->at_end= true;
     return !ec->at_end;
 }
 
-static void init(struct ecmp *ec, list *l, off_t skip, off_t size) {
-    ec->lst= l;
+static void init(struct ecmp *ec, list *unsh, off_t skip) {
+    ec->lst= unsh;
     ec->skip= skip;
     ec->i= 0;
-    while (advance(ec) && end_l(&ec->e) <= ec->skip);
-    if (!ec->at_end && ec->e.l < ec->skip) { // trim off before skip
-        off_t head= ec->skip - ec->e.l;
-        ec->e.l += head;
-        ec->e.len -= head;
+    while (advance(ec) && end_l_sh_ext(ec->e) <= ec->skip)
+        ;
+    off_t l;
+    if (!ec->at_end && (l= l_sh_ext(ec->e), l < ec->skip)) { // trim off before skip
+        off_t head= ec->skip - l;
+        ((extent*)only(ec->e->owners))->l += head;
+        ec->e->len -= head;
     }
 }
 
-static void report(off_t strt, off_t ln) {
-    printf(OFF_T " " OFF_T "\n", strt, ln);
-}
+static void report(off_t start, off_t len) { printf(OFF_T " " OFF_T "\n", start, len); }
 
 // trunc at max_cmp
 static void generate_cmp_output() {
@@ -597,27 +595,29 @@ static void generate_cmp_output() {
         off_t size1= info[0].size - skip1, size2= info[1].size - skip2;
         max_cmp= size1 > size2 ? size1 : size2;
     }
-    init(&f1, info[0].unsh, skip1, info[0].size);
-    init(&f2, info[1].unsh, skip2, info[1].size);
+    init(&f1, info[0].unsh, skip1);
+    init(&f2, info[1].unsh, skip2);
     while (!f1.at_end && !f2.at_end) {
-        if (f1.e.l > f2.e.l) swap();
-        if (end_l(&f1.e) <= f2.e.l) {
-            report(f1.e.l, f1.e.len);
+        off_t l1= l_sh_ext(f1.e), l2= l_sh_ext(f2.e);
+        off_t len1= f1.e->len, len2= f2.e->len;
+        if (l1 > l2) swap();
+        if (end_l_sh_ext(f1.e) <= l2) {
+            report(l1, len1);
             if (!advance(&f1)) break;
-        } else if (f1.e.l < f2.e.l) {
-            off_t head= f2.e.l - f1.e.l;
-            report(f1.e.l, head);
-            f1.e.l= f2.e.l;
-            f1.e.len -= head;
+        } else if (l1 < l2) {
+            off_t head= l2 - l1;
+            report(l1, head);
+            ((extent*) only(f1.e->owners))->l= l2;
+            f1.e->len -= head;
         } else {
-            if (f1.e.len > f2.e.len) swap();
-            if (f1.e.len < f2.e.len) {
-                report(f1.e.l, f1.e.len);
-                f2.e.l= end_l(&f1.e);
-                f2.e.len -= f1.e.len;
+            if (len1 > len2) swap();
+            if (len1 < len2) {
+                report(l1, len1);
+                ((extent*) f2.e)->l= end_l_sh_ext(f1.e);
+                f2.e->len -= len1;
                 if (!advance(&f1)) break;
             } else { // same start and len
-                report(f1.e.l, f1.e.len);
+                report(l1, len1);
                 advance(&f1);
                 advance(&f2);
                 if (f1.at_end || f2.at_end) break;
@@ -626,7 +626,7 @@ static void generate_cmp_output() {
     }
     if (f1.at_end) f1= f2;
     while (!f1.at_end) {
-        report(f1.e.l, f1.e.len);
+        report(l_sh_ext(f1.e), f1.e->len);
         advance(&f1);
     }
 }
@@ -634,7 +634,6 @@ static void generate_cmp_output() {
 int main(int argc, char *argv[]) {
     args(argc, argv);
     read_ext(&argv[optind]);
-    print_extents_by_file();
     phys_sort();
     find_shares();
     ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))

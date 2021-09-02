@@ -31,10 +31,11 @@ ONE=1 # exit on first difference
 BYTES=0
 VERBOSE=0
 ARGS=$(getopt -n "$0" -l "help,ignore-initial:,print_bytes,verbose,bytes:,quiet,silent,version"\
-       -o ":bhi:ln:sv" -- $@)
+       -o ":bhi:ln:sv" -- "$@")
 if [ $? -ne 0 ]; then
     usage; exit;
 fi
+
 eval set -- "$ARGS"
 while :
 do

@@ -24,8 +24,8 @@ struct fileinfo {
   unsigned fd;        // open fd during read
   off_t size;         // file size from stat(2)
   unsigned n_exts;    // # extents
-  extent *exts;       // ptr to first extent in array
-  list *unsh;         // unshared extents, list of sh_ext (solely owned by this file)
+  extent *exts;       // ptr to first extent in array of size n_exts
+  list *unsh;         // unshared extents, list of sh_ext* (solely owned by this file)
 };
 
 struct list {
@@ -38,7 +38,7 @@ struct list {
 struct sh_ext {
   off_t p;         // physical offset on device
   off_t len;
-  list *owners;    // the original extents from whence it came
+  list *owners;    // the original extent*s from whence it came
 };
 
 #define min(a,b) ({                                     \
