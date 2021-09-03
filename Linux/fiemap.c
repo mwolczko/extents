@@ -13,6 +13,7 @@
 #include "fail.h"
 #include "extents.h"
 #include "mem.h"
+#include "fiemap.h"
 
 void flags2str(unsigned flags, char *s, size_t n) {
     // This list copied from <fiemap.h>
@@ -47,14 +48,14 @@ void flags2str(unsigned flags, char *s, size_t n) {
         }
 }
 
-void get_extents(fileinfo *pfi) {
+void get_extents(fileinfo *pfi, off_t max_cmp) {
     struct fiemap fm= { 0L, (__u64) pfi->size, 0L, 0L, 0 };
     if (ioctl((int) pfi->fd, FS_IOC_FIEMAP, &fm) < 0)
         fail("Can't get extents : %s\n", strerror(errno));
     unsigned n= fm.fm_mapped_extents;
     struct fiemap *pfm= malloc_s(sizeof(struct fiemap) + n * sizeof(struct fiemap_extent));
-    pfm->fm_start=          0;
-    pfm->fm_length= pfi->size;
+    pfm->fm_start= roundDown(pfi->skip, blk_sz);
+    pfm->fm_length= max_cmp > 0 ? pfi->skip + max_cmp : pfi->size - pfi->skip;
     pfm->fm_flags=          0;
     pfm->fm_extent_count=   n;
     if (ioctl(pfi->fd, FS_IOC_FIEMAP, pfm) < 0)

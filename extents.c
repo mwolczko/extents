@@ -34,6 +34,7 @@ static list *extents; // list of all extent* from all files
 
 static bool
   print_flags        = false,
+  print_extents_only = false,
   print_shared_only  = false,
   print_unshared_only= false,
   no_headers         = false,
@@ -57,13 +58,13 @@ static list *shared; // list of sh_ext*
   }
 
 #ifdef linux
-#define OFF_T "%ld"
+#define OFF_T "ld"
 #else
-#define OFF_T "%lld"
+#define OFF_T "lld"
 #endif
 
 #define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n"\
-              "          [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
+              "          [-P|--print_extents_only] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
 
 static void usage(char *p) { fail(USAGE, p); }
 
@@ -85,6 +86,7 @@ static void print_help(char *progname) {
     printf("-h --help                          print help (this message)\n");
     printf("-i --ignore-initial SKIP1[:SKIP2}  skip first SKIP1 bytes of file1 (optionally, SKIP2 of file2) -- must be used with -c\n");
     printf("-n --no_headers                    don't print human-readable headers and line numbers\n");
+    printf("-P --print_extents_only            just print extents for each file, don't analyze sharing behavior");
     printf("-p --print_phys_addr               print physical address of extents\n");
     printf("-s --print_shared_only             print only shared extents (>1 file)\n");
     printf("-u --print_unshared_only           print only unshared extents (>1 file)\n");
@@ -101,19 +103,20 @@ static void args(int argc, char *argv[])
             { "help",                 no_argument, NULL, 'h' },
             { "ignore-initial", required_argument, NULL, 'i' },
             { "no_headers",           no_argument, NULL, 'n' },
+            { "print_extents_only",   no_argument, NULL, 'P' },
             { "print_phys_addr",      no_argument, NULL, 'p' },
             { "print_shared_only",    no_argument, NULL, 's' },
             { "print_unshared_only",  no_argument, NULL, 'u' },
             };
-    for (int c; c= getopt_long(argc, argv, "cfhnpsub:i:", longopts, NULL), c != -1; )
+    for (int c; c= getopt_long(argc, argv, "cfhnpPsub:i:", longopts, NULL), c != -1; )
         switch (c) {
         case 'b':
-            if (sscanf(optarg, OFF_T, &max_cmp) != 1 || max_cmp <= 0)
+            if (sscanf(optarg, "%" OFF_T, &max_cmp) != 1 || max_cmp <= 0)
                 fail("arg to -b|--bytes must be positive integer\n");
             break;
         case 'i':
-            if (sscanf(optarg, OFF_T ":" OFF_T, &skip1, &skip2) != 2) {
-                if (sscanf(optarg, OFF_T, &skip1) == 1) {
+            if (sscanf(optarg, "%" OFF_T ":%" OFF_T, &skip1, &skip2) != 2) {
+                if (sscanf(optarg, "%" OFF_T, &skip1) == 1) {
                     skip2= skip1;
                 } else
                     skip1= -1;
@@ -121,9 +124,11 @@ static void args(int argc, char *argv[])
             if (skip1 < 0 || skip2 < 0)
                 fail("arg to -i must be N or N:M (N,M non-negative integers)\n");
             break;
-        case 'c': cmp_output=          true; break;
+        case 'c': cmp_output=          true;
+                  fail_silently=       true; break;
         case 'f': print_flags=         true; break;
         case 'n': no_headers=          true; break;
+        case 'P': print_extents_only=  true; break;
         case 'p': print_phys_addr=     true; break;
         case 's': print_shared_only=   true; break;
         case 'u': print_unshared_only= true; break;
@@ -136,6 +141,10 @@ static void args(int argc, char *argv[])
         fail("Must choose only one of -s (--print_shared_only) and -u (--print_unshared_only)\n");
     if (cmp_output && nfiles != 2)
         fail("Must have two files with -c (--cmp_output)\n");
+    if (cmp_output && print_extents_only)
+        fail("Choose at most one of -c and -P");
+    if (cmp_output && (print_shared_only || print_unshared_only || print_phys_addr))
+        fail("Can't use -c with -s, -u or -p");
 }
 
 //functions on lists
@@ -225,24 +234,30 @@ static void fileno_sort(list *ps) {
 #define LINENO_FMT "%-6"
 #define FIELD_WIDTH 15
 #define FIELD_WIDTH_S "15"
+#define FIELD "%" OFF_T
+#define FIELD_W "%" FIELD_WIDTH_S OFF_T
 #define FILENO_WIDTH 4
 #define FILENO_WIDTH_S "4"
 #define SEP "  "
 
 static void print_extent(extent *e) {
-    char filenobuf[10];
     off_t log= e->l, ph= e->p, len= e->len;
-    char *fileno= nfiles == 1 ? ""
-            : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", e->info->argno + 1), filenobuf);
-    if (no_headers) {
-        char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
-        printf(fmt, fileno, log, ph, len);
-    } else {
-        char *fmt= print_phys_addr
-                    ? "%s%" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld "
-                    : "%s%" FIELD_WIDTH_S "ld %4$" FIELD_WIDTH_S "ld ";
-        printf(fmt, fileno, log, ph, len);
-    }
+    unsigned fileno= e->info->argno + 1;
+    if (no_headers)
+        if (nfiles == 1)
+            if (print_phys_addr)
+                printf(FIELD " " FIELD " " FIELD " ", log, ph, len);
+            else
+                printf(FIELD " " FIELD " ", log, len);
+        else if (print_phys_addr)
+            printf("%d " FIELD " " FIELD " " FIELD " ", fileno, log, ph, len);
+        else
+            printf("%d " FIELD " " FIELD " ", fileno, log, len);
+    else
+        if (print_phys_addr)
+            printf(FIELD_W " " FIELD_W " " FIELD_W " ", log, ph, len);
+        else
+            printf(FIELD_W " " FIELD_W " ", log, len);
 }
 
 static void print_sh_ext(off_t p, off_t len, extent *owner) {
@@ -383,7 +398,12 @@ static void read_ext(char *fn[]) {
         } else if (blk_sz != sb.st_blksize) fail("block size weirdness! %d v %d\n", blk_sz, sb.st_blksize);
         else if (device != sb.st_dev) fail("Error: All files must be on the same filesystem!\n");
         info[i].size= sb.st_size;
-        get_extents(&info[i]);
+        info[i].skip= 0;
+        if (cmp_output) {
+            if (i == 0) info[0].skip = skip1;
+            else if (i == 1) info[1].skip = skip2;
+        }
+        get_extents(&info[i], max_cmp);
         unsigned n= info[i].n_exts;
         n_ext += n;
         if (n > 0) {
@@ -454,13 +474,13 @@ static sh_ext *new_sh_ext() {
 static void add_to_shared(sh_ext *s) { append(shared, s); } // XXX also add to unshared, for -c with skip(s)
 
 static void add_to_unshared(sh_ext *sh) {
-    ITER(sh->owners, extent*, owner, {
+    /*ITER(sh->owners, extent*, owner, {
         append(owner->info->unsh, sh);
-    })
-    /*if (is_singleton(sh->owners)) {
+    })*/
+    if (is_singleton(sh->owners)) {
         extent *owner = only(sh->owners);
         append(owner->info->unsh, sh);
-    }*/
+    }
 }
 
 static void process_current() {
@@ -556,7 +576,6 @@ static void find_shares() {
 
 typedef struct ecmp ecmp;
 struct ecmp {
-    //fileinfo *info;
     list *lst; // list of extent*
     extent *e;
     off_t skip;
@@ -564,21 +583,7 @@ struct ecmp {
     bool at_end;
 } f1, f2;
 
-bool swapped= false;
-static void swap() { ecmp tmp= f1; f1= f2; f2= tmp; swapped= !swapped;}
-
-/*extent *owner(ecmp *ec) {
-    extent *e= ec->e;
-    return is_singleton(e->owners) ? only(e->owners) : get(e->owners, ec->info->argno);
-}
-
-off_t l_ext(ecmp *ec) {
-    extent *o= owner(ec);
-    return o->l + ec->e->p - o->p;
-}*/
-
-//off_t end_l_sh_ext(ecmp *ec) { return l_ext(ec) + ec->e->len; }
-//off_t end_l_ec(ecmp *ec) { return end_l(ec->e); }
+static void swap() { ecmp tmp= f1; f1= f2; f2= tmp; }
 
 static bool advance(ecmp *ec) {
     if (ec->i < n_elems(ec->lst)) {
@@ -600,30 +605,24 @@ static bool advance(ecmp *ec) {
 }
 
 static void init(ecmp *ec, fileinfo *info, off_t skip) {
-    //ec->info= info;
     ec->lst= new_list((int)info->n_exts);
     for (unsigned i= 0; i < info->n_exts; ++i)
         append(ec->lst, &info->exts[i]);
     ec->skip= skip;
     ec->i= 0;
-    while (advance(ec) && end_l(ec->e) <= 0) //<= ec->skip)
+    while (advance(ec) && end_l(ec->e) <= 0)
         ;
     off_t l;
-    if (!ec->at_end && (l= ec->e->l, l < 0)) { //ec->skip)) { // trim off before skip
-        //off_t head= -l; //ec->skip - l;
-        ec->e->l= 0;//+=head;
-        ec->e->len += l;//head;
+    if (!ec->at_end && (l= ec->e->l, l < 0)) { // trim off before skip
+        ec->e->l= 0;
+        ec->e->len += l;
         ec->e->p -= l;
     }
 }
 
-static off_t skip_off;
 static void report(off_t len) {
     off_t start1= f1.e->l;
-    printf(OFF_T " " OFF_T " " OFF_T "\n",
-           start1 + skip1, //swapped ? start1 + skip2 : start1 + skip1,
-           start1 + skip2, //swapped ? start1 + skip1 : start1 + skip2,
-           len);
+    printf("%"OFF_T " %" OFF_T " %" OFF_T "\n", start1 + skip1, start1 + skip2, len);
 }
 
 // trunc at max_cmp
@@ -634,11 +633,8 @@ static void generate_cmp_output() {
     }
     init(&f1, &info[0], skip1);
     init(&f2, &info[1], skip2);
-    skip_off= skip2 - skip1;
     while (!f1.at_end && !f2.at_end) {
         if (f1.e->l > f2.e->l) swap();
-        //off_t l1= f1.e->l, l2= f2.e->l;
-        //off_t len1= f1.e->len, len2= f2.e->len;
         if (end_l(f1.e) <= f2.e->l) {
             report(f1.e->len);
             if (!advance(&f1)) break;
@@ -650,8 +646,6 @@ static void generate_cmp_output() {
             f1.e->len -= head;
         } else { // same start
             if (f1.e->len > f2.e->len) swap();
-            //l1= f1.e->l;
-            //len1= f1.e->len; len2= f2.e->len;
             if (f1.e->len < f2.e->len) {
                 if (f1.e->p != f2.e->p) report(f1.e->len);
                 f2.e->l= end_l(f1.e);
@@ -676,7 +670,9 @@ static void generate_cmp_output() {
 int main(int argc, char *argv[]) {
     args(argc, argv);
     read_ext(&argv[optind]);
-    if (cmp_output)
+    if (print_extents_only)
+        print_extents_by_file();
+    else if (cmp_output)
         generate_cmp_output();
     else {
         phys_sort();

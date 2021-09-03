@@ -12,6 +12,7 @@
 #include "fail.h"
 #include "extents.h"
 #include "mem.h"
+#include "fiemap.h"
 
 void flags2str(unsigned flags, char *s, size_t n) { s[0]= '\0'; }
 
@@ -37,11 +38,12 @@ static void new_extent(fileinfo *pfi, off_t l, off_t p, off_t len)
   new->flags=  0;
 }
 
-void get_extents(fileinfo *pfi)
+void get_extents(fileinfo *pfi, off_t max_len)
 {
   bool in= false;
   off_t l, p;
-  for (off_t off= 0L;  off < pfi->size;  off += blk_sz) {
+  off_t limit= max_len > 0 ? pfi->skip + max_len : pfi->size;
+  for (off_t off= roundDown(pfi->skip, blk_sz) ;  off < limit;  off += blk_sz) {
     off_t ph= l2p(pfi->fd, off);
     if (in) {
       off_t len= off - l;
@@ -54,5 +56,5 @@ void get_extents(fileinfo *pfi)
       l= off;  p= ph;  in= true;
     }
   }
-  if (in) new_extent(pfi, l, p, pfi->size - l);
+  if (in) new_extent(pfi, l, p, limit - l);
 }

@@ -25,6 +25,7 @@ struct fileinfo {
   unsigned n_exts;    // # extents
   extent *exts;       // ptr to first extent in array of size n_exts
   list *unsh;         // unshared extents, list of sh_ext* (solely owned by this file)
+  off_t skip;
 };
 
 struct list {
