@@ -6,7 +6,6 @@
 typedef struct fileinfo fileinfo;
 typedef struct extent extent; 
 typedef struct list list;
-typedef struct sh_ext sh_ext; 
 
 // a raw extent from a specific file
 struct extent {
@@ -32,13 +31,6 @@ struct list {
   unsigned nelems;
   int max_sz; // negative means growable
   void **elems;
-};
-
-// an extent with its sharing info
-struct sh_ext {
-  off_t p;         // physical offset on device
-  off_t len;
-  list *owners;    // the original extent*s from whence it came
 };
 
 #define min(a,b) ({                                     \

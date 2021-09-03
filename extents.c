@@ -40,6 +40,14 @@ static bool
   print_phys_addr    = false,
   cmp_output         = false;
 
+// an extent with its sharing info
+typedef struct sh_ext sh_ext;
+struct sh_ext {
+    off_t p;         // physical offset on device
+    off_t len;
+    list *owners;    // the original extent*s from whence it came
+};
+
 static list *shared; // list of sh_ext*
 
 #define ITER(es, EL_T, elem, stmt)                \
@@ -370,6 +378,8 @@ static void read_ext(char *fn[]) {
         if (i == 0) {
             device= sb.st_dev;
             blk_sz= sb.st_blksize;
+            if (cmp_output && (skip1 - skip2) % blk_sz != 0)
+                fail("Skip distances must differ by a multiple of the block size (%d).\n", blk_sz);
         } else if (blk_sz != sb.st_blksize) fail("block size weirdness! %d v %d\n", blk_sz, sb.st_blksize);
         else if (device != sb.st_dev) fail("Error: All files must be on the same filesystem!\n");
         info[i].size= sb.st_size;
@@ -444,16 +454,22 @@ static sh_ext *new_sh_ext() {
 static void add_to_shared(sh_ext *s) { append(shared, s); } // XXX also add to unshared, for -c with skip(s)
 
 static void add_to_unshared(sh_ext *sh) {
-    extent *owner= only(sh->owners);
-    append(owner->info->unsh, sh);
+    ITER(sh->owners, extent*, owner, {
+        append(owner->info->unsh, sh);
+    })
+    /*if (is_singleton(sh->owners)) {
+        extent *owner = only(sh->owners);
+        append(owner->info->unsh, sh);
+    }*/
 }
 
 static void process_current() {
     assert(!is_empty(owners));
     sh_ext *s= new_sh_ext();
-    if (is_singleton(owners))
+    bool is_sing= is_singleton(owners);
+    if (is_sing || (cmp_output && skip1 != skip2))
         add_to_unshared(s);
-    else
+    if (!is_sing)
         add_to_shared(s);
     if (ei < n_elems(extents)) begin_next();
 }
@@ -538,56 +554,77 @@ static void find_shares() {
  * XXX
  */
 
+typedef struct ecmp ecmp;
 struct ecmp {
-    list *lst; // list of unshared sh_ext*
-    sh_ext *e;
+    //fileinfo *info;
+    list *lst; // list of extent*
+    extent *e;
     off_t skip;
     unsigned i;
     bool at_end;
 } f1, f2;
 
-static void swap() { struct ecmp tmp= f1; f1= f2; f2= tmp; }
+bool swapped= false;
+static void swap() { ecmp tmp= f1; f1= f2; f2= tmp; swapped= !swapped;}
 
-off_t l_sh_ext(sh_ext *e) {
-    extent *owner= only(e->owners);
-    return owner->l + e->p - owner->p;
+/*extent *owner(ecmp *ec) {
+    extent *e= ec->e;
+    return is_singleton(e->owners) ? only(e->owners) : get(e->owners, ec->info->argno);
 }
 
-off_t end_l_sh_ext(sh_ext *e) { return l_sh_ext(e) + e->len; }
+off_t l_ext(ecmp *ec) {
+    extent *o= owner(ec);
+    return o->l + ec->e->p - o->p;
+}*/
 
-static bool advance(struct ecmp *ec) {
+//off_t end_l_sh_ext(ecmp *ec) { return l_ext(ec) + ec->e->len; }
+//off_t end_l_ec(ecmp *ec) { return end_l(ec->e); }
+
+static bool advance(ecmp *ec) {
     if (ec->i < n_elems(ec->lst)) {
-        sh_ext *e= (sh_ext *) get(ec->lst, ec->i++);
+        extent *e= get(ec->lst, ec->i++);
         ec->e= e;
         off_t max_off= ec->skip + max_cmp;
-        off_t l= l_sh_ext(e);
+        off_t l= e->l;
         if (l >= max_off)
             ec->at_end= true;
         else {
             ec->at_end= false;
             if (l + e->len > max_off)
                 e->len= max_off - l;
+            e->l -= ec->skip;
         }
     } else
         ec->at_end= true;
     return !ec->at_end;
 }
 
-static void init(struct ecmp *ec, list *unsh, off_t skip) {
-    ec->lst= unsh;
+static void init(ecmp *ec, fileinfo *info, off_t skip) {
+    //ec->info= info;
+    ec->lst= new_list((int)info->n_exts);
+    for (unsigned i= 0; i < info->n_exts; ++i)
+        append(ec->lst, &info->exts[i]);
     ec->skip= skip;
     ec->i= 0;
-    while (advance(ec) && end_l_sh_ext(ec->e) <= ec->skip)
+    while (advance(ec) && end_l(ec->e) <= 0) //<= ec->skip)
         ;
     off_t l;
-    if (!ec->at_end && (l= l_sh_ext(ec->e), l < ec->skip)) { // trim off before skip
-        off_t head= ec->skip - l;
-        ((extent*)only(ec->e->owners))->l += head;
-        ec->e->len -= head;
+    if (!ec->at_end && (l= ec->e->l, l < 0)) { //ec->skip)) { // trim off before skip
+        //off_t head= -l; //ec->skip - l;
+        ec->e->l= 0;//+=head;
+        ec->e->len += l;//head;
+        ec->e->p -= l;
     }
 }
 
-static void report(off_t start, off_t len) { printf(OFF_T " " OFF_T "\n", start, len); }
+static off_t skip_off;
+static void report(off_t len) {
+    off_t start1= f1.e->l;
+    printf(OFF_T " " OFF_T " " OFF_T "\n",
+           start1 + skip1, //swapped ? start1 + skip2 : start1 + skip1,
+           start1 + skip2, //swapped ? start1 + skip1 : start1 + skip2,
+           len);
+}
 
 // trunc at max_cmp
 static void generate_cmp_output() {
@@ -595,29 +632,34 @@ static void generate_cmp_output() {
         off_t size1= info[0].size - skip1, size2= info[1].size - skip2;
         max_cmp= size1 > size2 ? size1 : size2;
     }
-    init(&f1, info[0].unsh, skip1);
-    init(&f2, info[1].unsh, skip2);
+    init(&f1, &info[0], skip1);
+    init(&f2, &info[1], skip2);
+    skip_off= skip2 - skip1;
     while (!f1.at_end && !f2.at_end) {
-        off_t l1= l_sh_ext(f1.e), l2= l_sh_ext(f2.e);
-        off_t len1= f1.e->len, len2= f2.e->len;
-        if (l1 > l2) swap();
-        if (end_l_sh_ext(f1.e) <= l2) {
-            report(l1, len1);
+        if (f1.e->l > f2.e->l) swap();
+        //off_t l1= f1.e->l, l2= f2.e->l;
+        //off_t len1= f1.e->len, len2= f2.e->len;
+        if (end_l(f1.e) <= f2.e->l) {
+            report(f1.e->len);
             if (!advance(&f1)) break;
-        } else if (l1 < l2) {
-            off_t head= l2 - l1;
-            report(l1, head);
-            ((extent*) only(f1.e->owners))->l= l2;
+        } else if (f1.e->l < f2.e->l) {
+            off_t head= f2.e->l - f1.e->l;
+            report(head);
+            f1.e->l= f2.e->l;
+            f1.e->p += head;
             f1.e->len -= head;
-        } else {
-            if (len1 > len2) swap();
-            if (len1 < len2) {
-                report(l1, len1);
-                ((extent*) f2.e)->l= end_l_sh_ext(f1.e);
-                f2.e->len -= len1;
+        } else { // same start
+            if (f1.e->len > f2.e->len) swap();
+            //l1= f1.e->l;
+            //len1= f1.e->len; len2= f2.e->len;
+            if (f1.e->len < f2.e->len) {
+                if (f1.e->p != f2.e->p) report(f1.e->len);
+                f2.e->l= end_l(f1.e);
+                f2.e->p += f1.e->len;
+                f2.e->len -= f1.e->len;
                 if (!advance(&f1)) break;
             } else { // same start and len
-                report(l1, len1);
+                if (f1.e->p != f2.e->p) report(f1.e->len);
                 advance(&f1);
                 advance(&f2);
                 if (f1.at_end || f2.at_end) break;
@@ -626,7 +668,7 @@ static void generate_cmp_output() {
     }
     if (f1.at_end) f1= f2;
     while (!f1.at_end) {
-        report(l_sh_ext(f1.e), f1.e->len);
+        report(f1.e->len);
         advance(&f1);
     }
 }
@@ -634,13 +676,13 @@ static void generate_cmp_output() {
 int main(int argc, char *argv[]) {
     args(argc, argv);
     read_ext(&argv[optind]);
-    phys_sort();
-    find_shares();
-    ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
-    log_sort(shared);
     if (cmp_output)
         generate_cmp_output();
     else {
+        phys_sort();
+        find_shares();
+        ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
+        log_sort(shared);
         if (!print_unshared_only) print_shared_extents();
         putchar('\n');
         if (!print_shared_only) print_unshared_extents();
