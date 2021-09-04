@@ -33,6 +33,6 @@ parfait:
 	export PARFAIT_NATIVEGCC=`which cc`
 	parfait -e all -W -p --disable=unchecked-result-call-stdc-ped-printf --disable=unchecked-result-call-stdc-ped-io `pwd`
 
-mkself: mkself.o
+mkself: mkself.o fail.o
 
 mkself.o : mkself.c fail.h

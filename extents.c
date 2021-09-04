@@ -328,7 +328,6 @@ static void print_extents_by_file() {
 static unsigned max_n_shared= 0;
 
 static void print_shared_extents() {
-    if (is_empty(shared)) return;
     if (!no_headers) {
         puts("Shared: ");
         printf(LINENO_FMT "s ", "");
@@ -476,12 +475,13 @@ static sh_ext *new_sh_ext() {
     return res;
 }
 
-static void add_to_shared(sh_ext *s) { append(shared, s); } // XXX also add to unshared, for -c with skip(s)
+static void add_to_shared(sh_ext *s) {
+  append(shared, s);
+  unsigned n= n_elems(shared);
+  if (n > max_n_shared) max_n_shared= n;
+}
 
 static void add_to_unshared(sh_ext *sh) {
-    /*ITER(sh->owners, extent*, owner, {
-        append(owner->info->unsh, sh);
-    })*/
     if (is_singleton(sh->owners)) {
         extent *owner = only(sh->owners);
         append(owner->info->unsh, sh);
@@ -699,8 +699,11 @@ int main(int argc, char *argv[]) {
         find_shares();
         ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
         log_sort(shared);
-        if (!print_unshared_only) print_shared_extents();
-        putchar('\n');
+        if (!print_unshared_only && !is_empty(shared)) {
+	  print_shared_extents();
+	  putchar('\n');
+	} else if (no_headers)
+	  putchar('\n');
         if (!print_shared_only) print_unshared_extents();
     }
     return 0;

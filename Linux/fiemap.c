@@ -67,9 +67,10 @@ void get_extents(fileinfo *pfi, off_t max_cmp) {
     pfi->exts=  pe;
     struct fiemap_extent *pfe= &pfm->fm_extents[0];
     while (n-- > 0) {
-        pe->l=   (off_t) pfe->fe_logical ;
-        pe->p=   (off_t) pfe->fe_physical;
-        pe->len= (off_t) pfe->fe_length;
+        pe->info=  pfi;
+        pe->l=     (off_t) pfe->fe_logical ;
+        pe->p=     (off_t) pfe->fe_physical;
+        pe->len=   (off_t) pfe->fe_length;
         pe->flags= pfe->fe_flags;
         ++pe; ++pfe;
     }
