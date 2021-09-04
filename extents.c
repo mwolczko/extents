@@ -1,7 +1,7 @@
 /*
   extents : print extent information for files
 
-  Mario Wolczko, Aug 2021
+  Mario Wolczko, Sep 2021
 
  */
 
@@ -51,11 +51,12 @@ struct sh_ext {
 
 static list *shared; // list of sh_ext*
 
-#define ITER(es, EL_T, elem, stmt)                \
-  for (unsigned _i= 0; _i < (es)->nelems; ++_i) { \
-    EL_T (elem)= get((es), _i);                   \
-    do { stmt; } while (0);                       \
-  }
+#define ITER(l, EL_T, elem, stmt) {             \
+  list *_l= (l);                                \
+  for (unsigned _i= 0; _i < _l->nelems; ++_i) { \
+    EL_T (elem)= get(_l, _i);                   \
+    do { stmt; } while (0);                     \
+  }}
 
 #ifdef linux
 #define OFF_T "ld"
@@ -64,7 +65,8 @@ static list *shared; // list of sh_ext*
 #endif
 
 #define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n"\
-              "          [-P|--print_extents_only] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]] FILE1 ...\n"
+              "          [-P|--print_extents_only] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]]\n"\
+              "          [-v|--dont_fail_silently] FILE1 [FILE2 ...]\n"
 
 static void usage(char *p) { fail(USAGE, p); }
 
@@ -80,17 +82,18 @@ static void print_help(char *progname) {
     printf("  its length.\nOffsets and lengths are in bytes.\n");
     printf("OS-specific flags are also printed (unless suppressed with -f or --no_flags). Flags are available only on Linux and are described in /usr/include/linux/fiemap.h.\n\n");
     printf("Options:\n");
-    printf("--bytes LIMIT                      compare at most LIMIT bytes (must be used with -c)\n");
-    printf("-c --cmp                           (two files only) output unshared regions to be compared by cmp\n");
-    printf("-f --flags                         print OS-specific flags\n");
-    printf("-h --help                          print help (this message)\n");
-    printf("-i --ignore-initial SKIP1[:SKIP2}  skip first SKIP1 bytes of file1 (optionally, SKIP2 of file2) -- must be used with -c\n");
-    printf("-n --no_headers                    don't print human-readable headers and line numbers\n");
-    printf("-P --print_extents_only            just print extents for each file, don't analyze sharing behavior");
-    printf("-p --print_phys_addr               print physical address of extents\n");
-    printf("-s --print_shared_only             print only shared extents (>1 file)\n");
-    printf("-u --print_unshared_only           print only unshared extents (>1 file)\n");
-    printf("\nMario Wolczko, Oracle, Aug 2021\n");
+    printf("-b --bytes LIMIT                   Compare at most LIMIT bytes (must be used with -c)\n");
+    printf("-c --cmp                           (two files only) Output unshared regions to be compared by cmp. Fails silently unless -v is specified.\n");
+    printf("-f --flags                         Print OS-specific flags\n");
+    printf("-h --help                          Print help (this message)\n");
+    printf("-i --ignore-initial SKIP1[:SKIP2}  Skip first SKIP1 bytes of file1 (optionally, SKIP2 of file2) -- must be used with -c\n");
+    printf("-n --no_headers                    Don't print human-readable headers and line numbers\n");
+    printf("-P --print_extents_only            Just print extents for each file, don't analyze sharing behavior");
+    printf("-p --print_phys_addr               Print physical address of extents\n");
+    printf("-s --print_shared_only             Print only shared extents (>1 file)\n");
+    printf("-u --print_unshared_only           Print only unshared extents (>1 file)\n");
+    printf("-v --dont_fail_silently            Don't fail silently (use only after -c)\n");
+    printf("\nMario Wolczko, Oracle, Sep 2021\n");
     exit(0);
 }
 
@@ -107,8 +110,9 @@ static void args(int argc, char *argv[])
             { "print_phys_addr",      no_argument, NULL, 'p' },
             { "print_shared_only",    no_argument, NULL, 's' },
             { "print_unshared_only",  no_argument, NULL, 'u' },
-            };
-    for (int c; c= getopt_long(argc, argv, "cfhnpPsub:i:", longopts, NULL), c != -1; )
+            { "dont_fail_silently",   no_argument, NULL, 'v' },
+        };
+    for (int c; c= getopt_long(argc, argv, "cfhnpPsuvb:i:", longopts, NULL), c != -1; )
         switch (c) {
         case 'b':
             if (sscanf(optarg, "%" OFF_T, &max_cmp) != 1 || max_cmp <= 0)
@@ -132,6 +136,7 @@ static void args(int argc, char *argv[])
         case 'p': print_phys_addr=     true; break;
         case 's': print_shared_only=   true; break;
         case 'u': print_unshared_only= true; break;
+        case 'v': fail_silently=      false; break;
         case 'h': print_help(argv[0]); break;
         default : usage(argv[0]);
     }
@@ -386,7 +391,7 @@ static void read_ext(char *fn[]) {
         info[i].fd= (unsigned) fd;
         info[i].argno= i;
         info[i].exts= NULL;
-        info[i].unsh= new_list(-4); // ???;
+        info[i].unsh= new_list(-4); // SWAG
         struct stat sb;
         if (fstat(fd, &sb) < 0) fail("Can't stat %s : %s\n", name, strerror(errno));
         if ((sb.st_mode & S_IFMT) != S_IFREG) fail("%s: Not a regular file\n", name);
@@ -421,7 +426,7 @@ static void read_ext(char *fn[]) {
 }
 
 /*
- * determine extent sharing -- here to find_shares()
+ * determine extent sharing -- find_shares()
  *
  * This algorithm takes a single list of all extents (variable: extents), and sorts it by physical address.
  * It then works through the list, comparing the current sh_ext (expressed in terms of its components) with the
@@ -531,7 +536,7 @@ static extent *new_extent(fileinfo *pfi, off_t l, off_t p, off_t len, unsigned f
 }
 
 static void find_shares() {
-    shared= new_list(-10); // ?? size
+    shared= new_list(-10); // SWAG
     if (n_ext == 0) return;
     ei= 0; begin_next();
     while (nxt_e != NULL) {
@@ -569,9 +574,11 @@ static void find_shares() {
 }
 
 /*
- * Generating indices for cmp(1).
+ * Generating indices for cmp(1) -- generate_cmp_output()
  *
- * XXX
+ * Walks through a pair of files, one extent at a time (in logical order).  Reports regions which may differ;
+ * suppresses the report when two regions share a physical extent.  Can be directed to start at any offset in either file
+ * using -i, and to limit the size of the region being compared (-b).
  */
 
 typedef struct ecmp ecmp;
@@ -620,9 +627,21 @@ static void init(ecmp *ec, fileinfo *info, off_t skip) {
     }
 }
 
+static off_t last_start= -1, last_len; // used to merge contiguous regions
+
+static void print_last() {
+    if (last_start >= 0) printf("%"OFF_T " %" OFF_T " %" OFF_T "\n", last_start + skip1, last_start + skip2, last_len);
+}
+
 static void report(off_t len) {
     off_t start1= f1.e->l;
-    printf("%"OFF_T " %" OFF_T " %" OFF_T "\n", start1 + skip1, start1 + skip2, len);
+    if (last_start >= 0 && last_start + last_len == start1)
+        last_len += len;
+    else {
+        print_last();
+        last_start = start1;
+        last_len = len;
+    }
 }
 
 // trunc at max_cmp
@@ -665,6 +684,7 @@ static void generate_cmp_output() {
         report(f1.e->len);
         advance(&f1);
     }
+    print_last();
 }
 
 int main(int argc, char *argv[]) {
