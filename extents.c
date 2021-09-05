@@ -51,6 +51,8 @@ struct sh_ext {
 
 static list *shared; // list of sh_ext*
 
+static unsigned total_unshared= 0;
+
 #define ITER(l, EL_T, elem, stmt) {             \
   list *_l= (l);                                \
   for (unsigned _i= 0; _i < _l->nelems; ++_i) { \
@@ -63,6 +65,16 @@ static list *shared; // list of sh_ext*
 #else
 #define OFF_T "lld"
 #endif
+
+#define LINENO_FMT "%-6"
+#define FIELD_WIDTH 15
+#define FIELD_WIDTH_S "15"
+#define STRING_FIELD_FMT "%" FIELD_WIDTH_S "s"
+#define FIELD "%" OFF_T
+#define FIELD_W "%" FIELD_WIDTH_S OFF_T
+#define FILENO_WIDTH 4
+#define FILENO_WIDTH_S "4"
+#define SEP "  "
 
 #define USAGE "usage: %s [--bytes LIMIT] [-c|--cmp] [-f|flags] [-h|--help] [[-i|--ignore-initial] SKIP1[:SKIP2]] [-n|--no_headers]\n"\
               "          [-P|--print_extents_only] [-p|--print_phys_addr] [[-s|--print_shared_only]|[-u|--print_unshared_only]]\n"\
@@ -115,12 +127,12 @@ static void args(int argc, char *argv[])
     for (int c; c= getopt_long(argc, argv, "cfhnpPsuvb:i:", longopts, NULL), c != -1; )
         switch (c) {
         case 'b':
-            if (sscanf(optarg, "%" OFF_T, &max_cmp) != 1 || max_cmp <= 0)
+            if (sscanf(optarg, FIELD, &max_cmp) != 1 || max_cmp <= 0)
                 fail("arg to -b|--bytes must be positive integer\n");
             break;
         case 'i':
-            if (sscanf(optarg, "%" OFF_T ":%" OFF_T, &skip1, &skip2) != 2) {
-                if (sscanf(optarg, "%" OFF_T, &skip1) == 1) {
+            if (sscanf(optarg, FIELD ":" FIELD, &skip1, &skip2) != 2) {
+                if (sscanf(optarg, FIELD, &skip1) == 1) {
                     skip2= skip1;
                 } else
                     skip1= -1;
@@ -232,77 +244,71 @@ static int extent_list_cmp_fileno(extent **a, extent **b) {
          : 0;
 }
 
+/*
+ * Printing
+ */
+
+static void print_lineno(unsigned n) { printf(LINENO_FMT "d ", n); }
+
+static void print_lineno_s(char *s)  { printf(LINENO_FMT "s ", s); }
+  
+static void sep() { fputs(SEP, stdout); }
+
 static void fileno_sort(list *ps) {
     qsort(ps->elems, ps->nelems, sizeof(void *), (__compar_fn_t) &extent_list_cmp_fileno);
 }
 
-#define LINENO_FMT "%-6"
-#define FIELD_WIDTH 15
-#define FIELD_WIDTH_S "15"
-#define FIELD "%" OFF_T
-#define FIELD_W "%" FIELD_WIDTH_S OFF_T
-#define FILENO_WIDTH 4
-#define FILENO_WIDTH_S "4"
-#define SEP "  "
+static void print_fileno(unsigned n) {
+  printf(no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", n);
+}
+
+static void print_fileno_header(char *s) {
+  printf("%" FILENO_WIDTH_S "s ", s);
+}
+
+static void print_off_t(off_t o) {
+  printf(no_headers ? FIELD " " : FIELD_W " ", o);
+}
+
+static void print_off_t_hdr(char *s) {
+  printf(STRING_FIELD_FMT " ", s);
+}
 
 static void print_extent(extent *e) {
-    off_t log= e->l, ph= e->p, len= e->len;
-    unsigned fileno= e->info->argno + 1;
-    if (no_headers)
-        if (nfiles == 1)
-            if (print_phys_addr)
-                printf(FIELD " " FIELD " " FIELD " ", log, ph, len);
-            else
-                printf(FIELD " " FIELD " ", log, len);
-        else if (print_phys_addr)
-            printf("%d " FIELD " " FIELD " " FIELD " ", fileno, log, ph, len);
-        else
-            printf("%d " FIELD " " FIELD " ", fileno, log, len);
-    else
-        if (print_phys_addr)
-            printf(FIELD_W " " FIELD_W " " FIELD_W " ", log, ph, len);
-        else
-            printf(FIELD_W " " FIELD_W " ", log, len);
+    print_off_t(e->l);
+    if (print_phys_addr) print_off_t(e->p);
+    print_off_t(e->len);
 }
 
 static void print_sh_ext(off_t p, off_t len, extent *owner) {
-    char filenobuf[10];
-    off_t l= p - owner->p + owner->l;
-    char *fileno= nfiles == 1 ? ""
-            : (sprintf(filenobuf, no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", owner->info->argno + 1),
-                    filenobuf);
-    if (no_headers) {
-        char *fmt= print_phys_addr ? "%s%ld %ld %ld" : "%s%ld %4$ld";
-        printf(fmt, fileno, l, p, len);
-    } else {
-        char *fmt= print_phys_addr
-                    ? "%s%" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld %" FIELD_WIDTH_S "ld "
-                    : "%s%" FIELD_WIDTH_S "ld %4$" FIELD_WIDTH_S "ld ";
-        printf(fmt, fileno, l, p, len);
-    }
+  off_t l= p - owner->p + owner->l;
+  print_off_t(l);
+  if (print_phys_addr) print_off_t(p);
+  print_off_t(len);
 }
 
-#define STRING_FIELD_FMT "%" FIELD_WIDTH_S "s"
+static void print_sh_ext_with_fileno(off_t p, off_t len, extent *owner) {
+  print_fileno(owner->info->argno + 1);
+  print_sh_ext(p, len, owner);
+}
 
-static void print_header1(char *s, bool f) {
-    printf("%" FILENO_WIDTH_S "s " STRING_FIELD_FMT " ", s ? s : "File", "Logical");
-    if (print_phys_addr) printf(STRING_FIELD_FMT " ", "Physical");
-    printf(STRING_FIELD_FMT " ", "Length");
-    if (print_flags && f) fputs("  Flags", stdout);
+static void print_header1(bool f) {
+  print_off_t_hdr("Logical");
+  if (print_phys_addr) print_off_t_hdr("Physical");
+  print_off_t_hdr("Length");
+  if (print_flags && f) fputs("  Flags", stdout);
 }
 
 static void print_header2() {
-    printf("%" FILENO_WIDTH_S "s " STRING_FIELD_FMT " ", "", "Offset");
-    if (print_phys_addr) printf(STRING_FIELD_FMT " ", "Offset");
-    printf(STRING_FIELD_FMT " ", "");
+  print_off_t_hdr("Offset");
+  if (print_phys_addr) print_off_t_hdr("Offset");
+  print_off_t_hdr("");
 }
 
-static void print_header(unsigned i, char *h) {
-    puts(info[i].name);
-    print_header1(h, true);
-    putchar('\n');
-    print_header2();
-    putchar('\n');
+static void print_header_for_file(unsigned i) {
+    printf("(%d) %s\n", i+1, info[i].name);
+    print_lineno_s("#"); print_header1(true); putchar('\n');
+    print_lineno_s("");  print_header2();     putchar('\n');
 }
 
 static char flagbuf[200];
@@ -314,12 +320,12 @@ static char *flag_pr(unsigned flags) {
 
 static void print_extents_by_file() {
     for (unsigned i= 0; i < nfiles; i++) {
-        if (!no_headers) print_header(i, "#");
+        if (!no_headers) print_header_for_file(i);
         for (unsigned e= 0; e < info[i].n_exts; ++e) {
             extent *ext= &info[i].exts[e];
-            if (!no_headers) printf("%" FILENO_WIDTH_S "d ", e + 1);
+            if (!no_headers) print_fileno(e + 1);
             print_extent(ext);
-            if (print_flags) printf("  %s", flag_pr(ext->flags));
+            if (print_flags) printf(" %s", flag_pr(ext->flags));
             putchar('\n');
         }
     }
@@ -329,34 +335,39 @@ static unsigned max_n_shared= 0;
 
 static void print_shared_extents() {
     if (!no_headers) {
-        puts("Shared: ");
-        printf(LINENO_FMT "s ", "");
+        if (!print_shared_only) puts("Shared: ");
+        print_lineno_s("#");
         for (unsigned i= 0; i < max_n_shared; ++i) {
-            print_header1("File", false);
-            fputs(SEP, stdout);
+ 	    print_fileno_header("File"); print_header1(false); sep();
         }
         putchar('\n');
-        printf(LINENO_FMT "s ", "");
+        print_lineno_s("");
         for (unsigned i= 0; i < max_n_shared; ++i) {
-            print_header2();
-            fputs(SEP, stdout);
+	    print_fileno_header(""); print_header2(); sep();
         }
         putchar('\n');
     }
     unsigned e= 1;
     ITER(shared, sh_ext*, s_e, {
-        if (!no_headers) printf(LINENO_FMT "d ", e++);
+        if (!no_headers) print_lineno(e++);
         ITER(s_e->owners, extent*, owner, {
-                print_sh_ext(s_e->p, s_e->len, owner); fputs(SEP, stdout);
+	    print_sh_ext_with_fileno(s_e->p, s_e->len, owner); sep();
         });
         putchar('\n');
         if (print_flags) {
-            printf(LINENO_FMT "s ", "FLAGS");
+	    if (!no_headers) print_lineno_s("Flags:");
+	    bool first= true;
             ITER(s_e->owners, extent*, owner, {
+		char *f= flag_pr(owner->flags);
+		if (no_headers) {
+		    if (!first) { putchar(','); putchar(' '); }
+		    fputs(f, stdout);
+		    first= false;
+		} else
                     printf("%-*s", FILENO_WIDTH
                                    + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
                                    + (print_phys_addr ? 6 : 5),
-                           flag_pr(owner->flags));
+                           f);
             });
             putchar('\n');
         }
@@ -364,16 +375,21 @@ static void print_shared_extents() {
 }
 
 static void print_unshared_extents() {
-    if (!no_headers) puts("Not Shared:");
+    if (total_unshared == 0) return;
+    if (!no_headers && !print_unshared_only) puts("Not Shared:");
     for (unsigned i= 0; i < nfiles; i++) {
         list *unsh= info[i].unsh;
         if (!is_empty(unsh)) {
             log_sort(unsh);
-            if (!no_headers) print_header(i, nfiles==1 ? "#" : "File");
-            unsigned e= 0;
+            if (!no_headers) print_header_for_file(i);
+            unsigned n= 1;
             ITER(info[i].unsh, sh_ext*, sh, {
-                if (!no_headers) printf("%" FILENO_WIDTH_S "d ", e++ + 1);
-                print_sh_ext(sh->p, sh->len, only(sh->owners));
+		if (!no_headers) print_lineno(n++);
+		extent *owner= only(sh->owners);
+                print_sh_ext(sh->p, sh->len, owner);
+		if (print_flags) {
+		  sep(); fputs(flag_pr(owner->flags), stdout);
+		}
                 putchar('\n');
             })
         }
@@ -477,7 +493,7 @@ static sh_ext *new_sh_ext() {
 
 static void add_to_shared(sh_ext *s) {
   append(shared, s);
-  unsigned n= n_elems(shared);
+  unsigned n= n_elems(s->owners);
   if (n > max_n_shared) max_n_shared= n;
 }
 
@@ -485,6 +501,7 @@ static void add_to_unshared(sh_ext *sh) {
     if (is_singleton(sh->owners)) {
         extent *owner = only(sh->owners);
         append(owner->info->unsh, sh);
+	total_unshared++;
     }
 }
 
@@ -541,33 +558,28 @@ static void find_shares() {
     ei= 0; begin_next();
     while (nxt_e != NULL) {
         off_t start_nxt= nxt_e->p;
-        //printf("%ld %ld  %ld %ld  ", start, len, start_nxt, nxt_e->len);
         if (start < start_nxt) {
             if (end > start_nxt) {
-                //puts("overlap");
                 len= start_nxt - start;
                 off_t tail_len= end - start_nxt;
                 ITER(owners, extent*, owner, {
                     extent *e= new_extent(owner->info, owner->l + len, start_nxt, tail_len, owner->flags);
                     insert(e);
                 })
-            } //else puts("precedes");
+            }
             process_current();
         } else { // same start
             append_owner(nxt_e);
             off_t len_nxt= nxt_e->len;
             if (len < len_nxt) {
-                //puts("shorter");
                 len_nxt -= len;
                 nxt_e->l += len;
                 nxt_e->p += len;
                 nxt_e->len= len_nxt;
                 re_sort();
                 nxt_e= get(extents, ei);
-            } else { // same len
-                //puts("same");
+            } else  // same len
                 next_extent();
-            }
         }
     }
     process_current();
@@ -630,7 +642,7 @@ static void init(ecmp *ec, fileinfo *info, off_t skip) {
 static off_t last_start= -1, last_len; // used to merge contiguous regions
 
 static void print_last() {
-    if (last_start >= 0) printf("%"OFF_T " %" OFF_T " %" OFF_T "\n", last_start + skip1, last_start + skip2, last_len);
+    if (last_start >= 0) printf(FIELD " " FIELD " " FIELD "\n", last_start + skip1, last_start + skip2, last_len);
 }
 
 static void report(off_t len) {
@@ -699,12 +711,11 @@ int main(int argc, char *argv[]) {
         find_shares();
         ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
         log_sort(shared);
-        if (!print_unshared_only && !is_empty(shared)) {
-	  print_shared_extents();
-	  putchar('\n');
-	} else if (no_headers)
-	  putchar('\n');
-        if (!print_shared_only) print_unshared_extents();
+	bool pr_sh= !print_unshared_only && !is_empty(shared);
+	bool pr_unsh= !print_shared_only && total_unshared > 0;
+        if (pr_sh) print_shared_extents();
+	if (pr_sh && pr_unsh || no_headers) putchar('\n');
+        if (pr_unsh) print_unshared_extents();
     }
     return 0;
 }

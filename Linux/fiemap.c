@@ -46,6 +46,7 @@ void flags2str(unsigned flags, char *s, size_t n) {
             n= max(n - strlen(nm[i]), 0);
             if (n > 0) strncat(s, " ", n--);
         }
+    if (s[strlen(s) - 1] == ' ') s[strlen(s) - 1]= '\0';
 }
 
 void get_extents(fileinfo *pfi, off_t max_cmp) {
