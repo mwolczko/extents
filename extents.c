@@ -76,10 +76,10 @@ static unsigned total_unshared= 0;
 #define FILENO_WIDTH_S "4"
 #define SEP "  "
 
-#define USAGE "usage: %s -P [-f] [-n] [-p] FILE1 [FILE2 ...]\n" \
-              "or:    %s [-s|-u] [-f] [-n] [-p] FILE1 [FILE2 ...]\n" \
-	      "or:    %s -c [-b LIMIT] [-i SKIP1[:SKIP2]] [-v] FILE1 FILE2\n" \
-	      "or:    %s -h\n"
+#define USAGE "usage: %s -P [-f] [-n] [-p] FILE1 [FILE2 ...]\n"               \
+              "or:    %s [-s|-u] [-f] [-n] [-p] FILE1 [FILE2 ...]\n"          \
+	          "or:    %s -c [-b LIMIT] [-i SKIP1[:SKIP2]] [-v] FILE1 FILE2\n" \
+	          "or:    %s -h\n"
 
 static void usage(char *p) { fail(USAGE, p, p, p, p); }
 
@@ -340,12 +340,12 @@ static void print_shared_extents() {
         if (!print_shared_only) puts("Shared: ");
         print_lineno_s("#");
         for (unsigned i= 0; i < max_n_shared; ++i) {
- 	    print_fileno_header("File"); print_header1(false); sep();
+ 	        print_fileno_header("File"); print_header1(false); sep();
         }
         putchar('\n');
         print_lineno_s("");
         for (unsigned i= 0; i < max_n_shared; ++i) {
-	    print_fileno_header(""); print_header2(); sep();
+	        print_fileno_header(""); print_header2(); sep();
         }
         putchar('\n');
     }
@@ -353,23 +353,23 @@ static void print_shared_extents() {
     ITER(shared, sh_ext*, s_e, {
         if (!no_headers) print_lineno(e++);
         ITER(s_e->owners, extent*, owner, {
-	    print_sh_ext_with_fileno(s_e->p, s_e->len, owner); sep();
+	        print_sh_ext_with_fileno(s_e->p, s_e->len, owner); sep();
         });
         putchar('\n');
         if (print_flags) {
-	    if (!no_headers) print_lineno_s("Flags:");
-	    bool first= true;
+	        if (!no_headers) print_lineno_s("Flags:");
+	        bool first= true;
             ITER(s_e->owners, extent*, owner, {
-		char *f= flag_pr(owner->flags);
-		if (no_headers) {
-		    if (!first) { putchar(','); putchar(' '); }
-		    fputs(f, stdout);
-		    first= false;
-		} else
+		        char *f= flag_pr(owner->flags);
+		        if (no_headers) {
+		            if (!first) { putchar(','); putchar(' '); }
+		            fputs(f, stdout);
+		            first= false;
+		        } else
                     printf("%-*s", FILENO_WIDTH
-                                   + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
-                                   + (print_phys_addr ? 6 : 5),
-                           f);
+                        + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
+                        + (print_phys_addr ? 6 : 5),
+                        f);
             });
             putchar('\n');
         }
@@ -386,12 +386,12 @@ static void print_unshared_extents() {
             if (!no_headers) print_header_for_file(i);
             unsigned n= 1;
             ITER(info[i].unsh, sh_ext*, sh, {
-		if (!no_headers) print_lineno(n++);
-		extent *owner= only(sh->owners);
+                if (!no_headers) print_lineno(n++);
+                extent *owner = only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
-		if (print_flags) {
-		  sep(); fputs(flag_pr(owner->flags), stdout);
-		}
+                if (print_flags) {
+                    sep(); fputs(flag_pr(owner->flags), stdout);
+                }
                 putchar('\n');
             })
         }
@@ -625,11 +625,11 @@ static bool advance(ecmp *ec) {
     return !ec->at_end;
 }
 
-static void init(ecmp *ec, fileinfo *info, off_t skip) {
+static void init(ecmp *ec, fileinfo *info) {
     ec->lst= new_list((int)info->n_exts);
     for (unsigned i= 0; i < info->n_exts; ++i)
         append(ec->lst, &info->exts[i]);
-    ec->skip= skip;
+    ec->skip= info->skip;
     ec->i= 0;
     while (advance(ec) && end_l(ec->e) <= 0)
         ;
@@ -661,11 +661,12 @@ static void report(off_t len) {
 // trunc at max_cmp
 static void generate_cmp_output() {
     if (max_cmp < 0) {
-        off_t size1= info[0].size - skip1, size2= info[1].size - skip2;
+        off_t size1= info[0].size - info[0].skip,
+              size2= info[1].size - info[1].skip;
         max_cmp= size1 > size2 ? size1 : size2;
     }
-    init(&f1, &info[0], skip1);
-    init(&f2, &info[1], skip2);
+    init(&f1, &info[0]);
+    init(&f2, &info[1]);
     while (!f1.at_end && !f2.at_end) {
         if (f1.e->l > f2.e->l) swap();
         if (end_l(f1.e) <= f2.e->l) {
