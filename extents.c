@@ -601,10 +601,11 @@ struct ecmp {
     extent *e;
     off_t skip;
     unsigned i;
-    bool at_end;
 } f1, f2;
 
 static void swap() { ecmp tmp= f1; f1= f2; f2= tmp; }
+
+static bool at_end(ecmp *ec) { return ec->e == NULL; }
 
 static bool advance(ecmp *ec) {
     if (ec->i < n_elems(ec->lst)) {
@@ -612,17 +613,16 @@ static bool advance(ecmp *ec) {
         ec->e= e;
         off_t max_off= ec->skip + max_cmp;
         off_t l= e->l;
-        if (l >= max_off)
-            ec->at_end= true;
+        if (l >= max_off) 
+            ec->e= NULL;
         else {
-            ec->at_end= false;
             if (l + e->len > max_off)
                 e->len= max_off - l;
             e->l -= ec->skip;
         }
     } else
-        ec->at_end= true;
-    return !ec->at_end;
+        ec->e= NULL;
+    return ec->e != NULL;
 }
 
 static void init(ecmp *ec, fileinfo *info) {
@@ -634,7 +634,7 @@ static void init(ecmp *ec, fileinfo *info) {
     while (advance(ec) && end_l(ec->e) <= 0)
         ;
     off_t l;
-    if (!ec->at_end && (l= ec->e->l, l < 0)) { // trim off before skip
+    if (!at_end(ec) && (l= ec->e->l, l < 0)) { // trim off before skip
         ec->e->l= 0;
         ec->e->len += l;
         ec->e->p -= l;
@@ -644,7 +644,8 @@ static void init(ecmp *ec, fileinfo *info) {
 static off_t last_start= -1, last_len; // used to merge contiguous regions
 
 static void print_last() {
-    if (last_start >= 0) printf(FIELD " " FIELD " " FIELD "\n", last_start + skip1, last_start + skip2, last_len);
+    if (last_start >= 0)
+        printf(FIELD " " FIELD " " FIELD "\n", last_start + skip1, last_start + skip2, last_len);
 }
 
 static void report(off_t len) {
@@ -667,7 +668,7 @@ static void generate_cmp_output() {
     }
     init(&f1, &info[0]);
     init(&f2, &info[1]);
-    while (!f1.at_end && !f2.at_end) {
+    while (!at_end(&f1) && !at_end(&f2)) {
         if (f1.e->l > f2.e->l) swap();
         if (end_l(f1.e) <= f2.e->l) {
             report(f1.e->len);
@@ -690,12 +691,12 @@ static void generate_cmp_output() {
                 if (f1.e->p != f2.e->p) report(f1.e->len);
                 advance(&f1);
                 advance(&f2);
-                if (f1.at_end || f2.at_end) break;
+                if (at_end(&f1) || at_end(&f2)) break;
             }
         }
     }
-    if (f1.at_end) f1= f2;
-    while (!f1.at_end) {
+    if (at_end(&f1)) f1= f2;
+    while (!at_end(&f1)) {
         report(f1.e->len);
         advance(&f1);
     }

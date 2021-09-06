@@ -1,4 +1,4 @@
-#!/bin/bash -p
+#!/usr/bin/env bash
 
 # Clone-aware cmp
 
@@ -23,10 +23,14 @@ xxx
 
 usage() { echo usage: "$0" '<cmp-opts> file1 file2' ; }
 
+trap 'rm -f /tmp/cmpout$$ /tmp/cmperr$$' 0
+trap exit 2 15
+
 OrigArgs="$*"
 CMPOPTS=
 ExtArgs=
-AWK="'"'{$5+='"'"'"$Start"'"'"'; $5 = $5 ","; print}'"'"
+AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; print}'"'"
+AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; print; next}'"'"
 ONE=1 # exit on first difference
 BYTES=0
 VERBOSE=0
@@ -39,26 +43,32 @@ eval set -- "$ARGS"
 while :
 do
     case "$1" in
-    -b|--bytes)
-      BYTES=1 CMPOPTS="$CMPOPTS -b" ONE=1
-	    AWK="'"'{$5+='"'"'"$Start"'"'"'; printf "%s %s %s %s %s, %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 }'"'"
-	    shift;;
-	  -[h?]|--help) help; exit 0;;
-	  -i|--ignore-initial) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
-	  -l|--verbose)
-	    VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
-	    AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
-	    shift;;
-	  -n) CMPOPTS="$CMPOPTS -n $OPTARG"; shift 2;;
-	  -s|--quiet|silent) AWK="'{}'"; shift;;
-	  -v|--version) version; exit;;
-	  --) shift; break;;
-	  *) echo 'arg parsing error'; exit 1;;
+      -b|--print-bytes)
+        BYTES=1 CMPOPTS="$CMPOPTS -b" ONE=1
+        AWK1="'"'{$5+='"'"'"$Start1"'"'"'; printf "%s %s %s %s %s, %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 }'"'"
+	#AWK2="'{print}'"
+        shift;;
+      -[h?]|--help) help; exit 0;;
+      -i|--ignore-initial) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
+      -l|--verbose)
+        VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
+        AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
+	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
+        shift;;
+      -n|--bytes)
+        CMPOPTS="$CMPOPTS -n $OPTARG"
+        ExtArgs="$ExtArgs -n $OPTARG"
+        shift 2;;
+      -s|--quiet|silent) AWK1="'{}'"; AWK2="$AWK1"; shift;;
+      -v|--version) version; exit;;
+      --) shift; break;;
+      *) echo 'arg parsing error'; exit 1;;
     esac
 done
 
 if (( BYTES && VERBOSE ))
-then AWK="'"'{$1+='"'"'"$Start"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+then AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+     AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
 fi
 
 case $# in
@@ -69,23 +79,27 @@ case $# in
     *) usage ; exit ;;
 esac
 
+set +o pipefail
+
 cmpAwkLoop() {
-  typeset -i Start Len Cmp
-  typeset -i Cmps=1 # logical AND of all the inverted cmp statuses (ie 1 if all returned 1 [ie same], 0 otherwise)
-  while read Start Len
+  declare -i Start1 Start2 Len Cmp
+  declare -i Cmps=1 # logical AND of all the inverted cmp statuses (ie 1 if all returned 1 [ie same], 0 otherwise)
+  while read Start1 Start2 Len
   do
-	  cmp ${CMPOPTS[@]} -i "$Start" -n "$Len" "$A" "$B" | eval awk "$AWK"
-	  Cmp=${PIPESTATUS[0]}
-	  (( Cmps = Cmps && ! Cmp )) # cmp returns 0 for same, 1 for different
-	  if (( ONE && Cmp ))
-	  then break
-	  fi
+      cmp ${CMPOPTS[@]} -i "$Start1:$Start2" -n "$Len" "$A" "$B" >/tmp/cmpout$$ 2>/tmp/cmperr$$
+      Cmp=$?
+      eval awk "$AWK1" /tmp/cmpout$$
+      eval awk "$AWK2" /tmp/cmperr$$ 1>&2
+      (( Cmps = Cmps && ! Cmp )) # cmp returns 0 for same, 1 for different
+      if (( ONE && Cmp ))
+      then break
+      fi
   done
   return "$Cmps"
 }
 
-PATH=$(dirname "$0")":$PATH" # add to PATH for extents
-extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
+sync # extents can be fooled by write data in flight, so stabilize
+PATH=$(dirname "$0")":$PATH" extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
 
 Cmps=$?
 if [[ ${PIPESTATUS[0]} -ne 0 ]]

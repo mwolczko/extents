@@ -1,7 +1,7 @@
 OS := $(shell uname)
 
 export O_CFLAGS := $(CFLAGS)
-CFLAGS := -I$(OS) -I. -g
+CFLAGS := -I$(OS) -I. -O
 
 all : extents
 

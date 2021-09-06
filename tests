@@ -1,10 +1,13 @@
-#!/bin/bash -p 
+#!/usr/bin/env bash 
 
-trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$' 0
+trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$ /tmp/opts$$ /tmp/pairs$$ $TESTS' 0
 trap exit 2 15
 
+# put the files with shared extents here-- must be in a filesystem that supports reflinks
 TEST_DIR=${TEST_DIR:-/mnt/img}
 T=$TEST_DIR/testfile$$.
+
+TESTS=/tmp/cmds$$
 
 # make a file
 dd if=/dev/zero of=${T}0 count=2048 2>/dev/null
@@ -14,70 +17,100 @@ Linux)  CP="cp --reflink" ;;
 Darwin) CP="cp -c" ;;
 esac
 
+copy() {
+    $CP "$@" ||
+	{ echo "$CP failed -- perhaps filesystem at $TEST_DIR does not support reflinks?"; exit 1; }
+}
+
 # clone it a few times
-$CP ${T}0 ${T}1 # same
-$CP ${T}0 ${T}2 ; echo foo | dd of=${T}2 bs=1 seek=500000 conv=notrunc 2>/dev/null   # one change
-$CP ${T}2 ${T}3 ; echo bar | dd of=${T}3 bs=1 seek=999000 conv=notrunc 2>/dev/null   # two changes from ${T}0
-$CP ${T}0 ${T}4 ; echo -n foo >> ${T}4  # longer
-$CP ${T}0 ${T}5 ; echo -n bar >> ${T}5  # longer but different
-$CP ${T}0 ${T}6 ; echo -n barf >> ${T}6 # longest
-
-FAILED=0
-
-start() {
-    echo -n Comparing: $* ' : '
-    GOOD=1
-}
-    
-fail() {
-    GOOD=0 FAILED=1
-    echo "Failed : $3"
-    if [ $# -eq 5 ]
-    then echo diff cmp vs ccmp ; diff $4 $5
-    fi
-    echo
-}
+copy ${T}0 ${T}1 # same
+copy ${T}0 ${T}2 ; echo foo | dd of=${T}2 bs=1 seek=500000 conv=notrunc 2>/dev/null   # one change
+copy ${T}2 ${T}3 ; echo bar | dd of=${T}3 bs=1 seek=999000 conv=notrunc 2>/dev/null   # two changes from ${T}0
+copy ${T}0 ${T}4 ; echo -n foo >> ${T}4  # longer
+copy ${T}0 ${T}5 ; echo -n bar >> ${T}5  # longer but different
+copy ${T}0 ${T}6 ; echo -n barf >> ${T}6 # longest
+sync # needed to ensure data are stable in allocated file extents
 
 # compare and check output against cmp
 
-# flags:
-cat <<xxx |
+# opts:
+cat <<xxx >/tmp/opts$$
 
 -b
 -l
 -s
 -bl
 xxx
-while read args
-do
-	cat <<xxx |
+
+cat <<xxx >/tmp/pairs$$
 ${T}0 ${T}1
 ${T}0 ${T}2
 ${T}0 ${T}3
 ${T}3 ${T}4
 ${T}4 ${T}5
+${T}5 ${T}6
 xxx
-	while read f g
-	do
-		start $args $f $g 
-		rm -f /tmp/golden$$ /tmp/golden-err$$ /tmp/output$$ /tmp/err$$
-		cmp $args $f $g >/tmp/golden$$ 2>/tmp/golden-err$$
-		CMPEXIT=$?
-		ccmp $args $f $g >/tmp/output$$ 2>/tmp/err$$
-		CCMPEXIT=$?
-		if [ $CCMPEXIT -ne $CMPEXIT ]
-		then fail $f $g "exit status differs ($CMPEXIT for cmp, $CCMPEXIT for ccmp)" 
-		fi
-		if ! cmp -s /tmp/golden$$ /tmp/output$$ 
-		then fail $f $g  "stdout differs" /tmp/golden$$ /tmp/output$$
-		fi
-		if ! cmp -s /tmp/golden-err$$ /tmp/err$$
-		then fail $f $g "stderr differs" /tmp/golden-err$$ /tmp/err$$
-		fi
-		if [[ $GOOD ]]
-		then echo Passed
-		fi
-	done
+
+cat /tmp/opts$$ | while read opts
+do
+    cat /tmp/pairs$$ | while read f g
+    do 
+	echo $opts $f $g
+    done
+done >$TESTS
+
+cat >>$TESTS <<xxx
+-bl -i 500000:1048576 ${T}2 ${T}4
+-bl -i 500000:1048576 ${T}3 ${T}5
+-bl -i 500000:1048576 ${T}3 ${T}6
+xxx
+
+if [ $(uname) = Linux ]
+then
+    # extra tests for self-sharing files
+    :
+fi
+
+FAILED=0
+declare -a testargs
+
+start() {
+    echo -n "Comparing: ${testargs[*]}  : "
+    GOOD=1
+    F1=${testargs[-2]} F2=${testargs[-1]}
+}
+    
+fail() {
+    GOOD=0 FAILED=1
+    echo "Failed : $1"
+}
+
+faildiff() {
+    fail "$3"
+    echo diff cmp vs ccmp ; diff $1 $2
+    echo
+}    
+
+cat $TESTS | while read -a testargs
+do
+    start
+    rm -f /tmp/golden$$ /tmp/golden-err$$ /tmp/output$$ /tmp/err$$
+    cmp ${testargs[@]} >/tmp/golden$$ 2>/tmp/golden-err$$
+    CMPEXIT=$?
+    ccmp ${testargs[@]} >/tmp/output$$ 2>/tmp/err$$
+    CCMPEXIT=$?
+    if [ $CCMPEXIT -ne $CMPEXIT ]
+    then fail "exit status differs ($CMPEXIT for cmp, $CCMPEXIT for ccmp)" 
+    fi
+    if ! cmp -s /tmp/golden$$ /tmp/output$$ 
+    then faildiff /tmp/golden$$ /tmp/output$$ "stdout differs" 
+    fi
+    if ! cmp -s /tmp/golden-err$$ /tmp/err$$
+    then faildiff /tmp/golden-err$$ /tmp/err$$ "stderr differs" 
+    fi
+    if [ $GOOD -eq 1 ]
+    then echo Passed
+    fi
 done
 
 exit $FAILED
