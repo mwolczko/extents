@@ -10,25 +10,26 @@ T=$TEST_DIR/testfile$$.
 TESTS=/tmp/cmds$$
 
 # make a file
-dd if=/dev/zero of=${T}0 count=2048 2>/dev/null
+dd if=/dev/zero of="${T}0" count=2048 2>/dev/null
 
-case `uname` in
+case $(uname) in
 Linux)  CP="cp --reflink" ;;
 Darwin) CP="cp -c" ;;
 esac
 
 copy() {
     $CP "$@" ||
-	{ echo "$CP failed -- perhaps filesystem at $TEST_DIR does not support reflinks?"; exit 1; }
+	  { echo "$CP failed -- perhaps filesystem at $TEST_DIR does not support reflinks?"; exit 1; }
 }
 
 # clone it a few times
-copy ${T}0 ${T}1 # same
-copy ${T}0 ${T}2 ; echo foo | dd of=${T}2 bs=1 seek=409600 conv=notrunc 2>/dev/null   # one change
-copy ${T}2 ${T}3 ; echo bar | dd of=${T}3 bs=1 seek=942080 conv=notrunc 2>/dev/null   # two changes from ${T}0
-copy ${T}0 ${T}4 ; echo -n foo >> ${T}4  # longer
-copy ${T}0 ${T}5 ; echo -n bar >> ${T}5  # longer but different
-copy ${T}0 ${T}6 ; echo -n barf >> ${T}6 # longest
+copy "${T}0" "${T}1" # same
+copy "${T}0" "${T}2" ; echo foo | dd "of=${T}2" bs=1 seek=409600 conv=notrunc 2>/dev/null   # one change
+copy "${T}2" "${T}3" ; echo bar | dd "of=${T}3" bs=1 seek=942080 conv=notrunc 2>/dev/null   # two changes from ${T}0
+copy "${T}0" "${T}4" ; echo -n foo >> "${T}4"  # longer
+copy "${T}0" "${T}5" ; echo -n bar >> "${T}5"  # longer but different
+copy "${T}0" "${T}6" ; echo -n barf >> "${T}6" # longest
+
 sync # needed to ensure data are stable in allocated file extents
 
 # compare and check output against cmp
@@ -51,24 +52,24 @@ ${T}4 ${T}5
 ${T}5 ${T}6
 xxx
 
-cat /tmp/opts$$ | while read opts
+while read opts
 do
-    cat /tmp/pairs$$ | while read f g
+    while read f g
     do 
-	echo $opts $f $g
-    done
-done >$TESTS
+	      echo "$opts $f $g"
+    done </tmp/pairs$$
+done </tmp/opts$$ >$TESTS
 
-cat >>$TESTS <<xxx
+cat >>"$TESTS" <<xxx
 -bl -i 409600:1048576 ${T}2 ${T}4
 -bl -i 409600:1048576 ${T}3 ${T}5
 -bl -i 409600:1048576 ${T}3 ${T}6
 xxx
 
-if [ $(uname) = Linux ]
+if [ "$(uname)" = Linux ]
 then
     # extra tests for self-sharing files
-    (cd $TEST_DIR; ~-/mkself 1 1; mv self.dat ${T}-self-1-1.dat; ~-/mkself 2 2; mv self.dat ${T}-self-2-2.dat)
+    (cd "$TEST_DIR" || exit 1; ~-/mkself 1 1; mv self.dat "${T}-self-1-1.dat"; ~-/mkself 2 2; mv self.dat "${T}-self-2-2.dat")
     cat >>$TESTS <<-EOF
     -i 0:4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
     -i 0:4096 -n 4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
@@ -83,7 +84,6 @@ declare -a testargs
 start() {
     echo -n "Comparing: ${testargs[*]}  : "
     GOOD=1
-    F1=${testargs[-2]} F2=${testargs[-1]}
 }
     
 fail() {
@@ -93,17 +93,17 @@ fail() {
 
 faildiff() {
     fail "$3"
-    echo diff cmp vs ccmp ; diff $1 $2
+    echo diff cmp vs ccmp ; diff "$1" "$2"
     echo
 }    
 
-cat $TESTS | while read -a testargs
+while read -a testargs
 do
     start
     rm -f /tmp/golden$$ /tmp/golden-err$$ /tmp/output$$ /tmp/err$$
-    cmp ${testargs[@]} >/tmp/golden$$ 2>/tmp/golden-err$$
+    cmp "${testargs[@]}" >/tmp/golden$$ 2>/tmp/golden-err$$
     CMPEXIT=$?
-    ccmp ${testargs[@]} >/tmp/output$$ 2>/tmp/err$$
+    ccmp "${testargs[@]}" >/tmp/output$$ 2>/tmp/err$$
     CCMPEXIT=$?
     if [ $CCMPEXIT -ne $CMPEXIT ]
     then fail "exit status differs ($CMPEXIT for cmp, $CCMPEXIT for ccmp)" 
@@ -117,6 +117,6 @@ do
     if [ $GOOD -eq 1 ]
     then echo Passed
     fi
-done
+done < "$TESTS"
 
 exit $FAILED

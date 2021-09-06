@@ -2,6 +2,14 @@
 
 # Clone-aware cmp
 
+if [ $(uname) = Darwin ]
+then
+  if [ ! -x /usr/local/opt/gnu-getopt/bin/getopt ]
+  then echo "must install gnu getopt" ; exit 1
+  fi
+  PATH="/usr/local/opt/gnu-getopt/bin:$PATH" # use gnu getopt
+fi
+
 version() { echo ccmp v1.0 Aug 2021; }
 
 help() {
@@ -27,10 +35,10 @@ trap 'rm -f /tmp/cmpout$$ /tmp/cmperr$$' 0
 trap exit 2 15
 
 declare -a OrigArgs=("$*")
-CMPOPTS=
-ExtArgs=
-AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; print}'"'"
-AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; print; next}'"'"
+declare -a CMPOPTS
+declare -a ExtArgs
+AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; print}'"'" # for stdout
+AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; print; next}'"'" #stderr
 ONE=1 # exit on first difference
 BYTES=0
 SKIP=0
@@ -45,25 +53,27 @@ while :
 do
     case "$1" in
       -b|--print-bytes)
-        BYTES=1 CMPOPTS="$CMPOPTS -b" ONE=1
+        BYTES=1  ONE=1
+        CMPOPTS+=(-b)
         AWK1="'"'{$5+='"'"'"$Start1"'"'"'; printf "%s %s %s %s %s, %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 }'"'"
-	#AWK2="'{print}'"
+	      #AWK2="'{print}'"
         shift;;
       -[h?]|--help) help; exit 0;;
       -i|--ignore-initial)
-	SKIP=1
-	CMPOPTS="$CMPOPTS -i $2"
-	ExtArgs="$ExtArgs -i $2"
+	      SKIP=1
+	      CMPOPTS+=(-i "$2")
+	      ExtArgs+=(-i "$2")
         AWK1="'"'{$1-='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
-	shift 2;;
+	      shift 2;;
       -l|--verbose)
-        VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
+        VERBOSE=1 ONE=0
+        CMPOPTS+=(-l)
         AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
-	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
+      	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
         shift;;
       -n|--bytes)
-        CMPOPTS="$CMPOPTS -n $2"
-        ExtArgs="$ExtArgs -n $2"
+        CMPOPTS+=(-n "$2")
+        ExtArgs+=(-n "$2")
         shift 2;;
       -s|--quiet|silent) AWK1="'{}'"; AWK2="$AWK1"; shift;;
       -v|--version) version; exit;;
@@ -76,20 +86,20 @@ if (( BYTES && VERBOSE ))
 then
     if (( ! SKIP ))
     then
-	AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
-	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
+	    AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+	    AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
     else
-	AWK1="'"'{printf "%s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
-	AWK2="'"'/EOF/ {sub(/which is/,"after byte"); print}'"'"
+	    AWK1="'"'{printf "%s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+	    AWK2="'"'/EOF/ {sub(/which is/,"after byte"); print}'"'"
     fi
     
 fi
 
 case $# in
-    1) cmp ${OrigArgs[@]} ; exit $? ;;
-    2) A="$1" B="$2";;
-    3) A="$1" B="$2" ExtArgs="$ExtArgs -i $3";;
-    4) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
+    1) cmp "${OrigArgs[@]}" ; exit $? ;;
+    2) A="$1" B="$2" ;;
+    3) A="$1" B="$2" ExtArgs+=(-i "$3") ;;
+    4) A="$1" B="$2" ExtArgs+=(-i "$3:$4") ;;
     *) usage ; exit ;;
 esac
 
@@ -98,7 +108,7 @@ cmpAwkLoop() {
   declare -i Cmps=1 # logical AND of all the inverted cmp statuses (ie 1 if all returned 1 [ie same], 0 otherwise)
   while read Start1 Start2 Len
   do
-      cmp ${CMPOPTS[@]} -i "$Start1:$Start2" -n "$Len" "$A" "$B" >/tmp/cmpout$$ 2>/tmp/cmperr$$
+      cmp "${CMPOPTS[@]}" -i "$Start1:$Start2" -n "$Len" "$A" "$B" >/tmp/cmpout$$ 2>/tmp/cmperr$$
       Cmp=$?
       eval awk "$AWK1" /tmp/cmpout$$
       eval awk "$AWK2" /tmp/cmperr$$ 1>&2
@@ -112,12 +122,12 @@ cmpAwkLoop() {
 
 sync # extents can be fooled by write data in flight, so stabilize
 PATH=$(dirname "$0")":$PATH"
-extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
-declare -a SAVED_PS=(${PIPESTATUS[@]})
+extents -c "${ExtArgs[@]}" "$A" "$B" | cmpAwkLoop
+declare -a SAVED_PS=("${PIPESTATUS[@]}")
 Cmps=${SAVED_PS[1]}
 if [ ${SAVED_PS[0]} -ne 0 ]
 then # extents failed, fall back to cmp
-    cmp ${OrigArgs[@]} ; Cmps=$?
+    cmp "${OrigArgs[@]}" ; Cmps=$?
 else
     Cmps=$(( ! Cmps ))
 fi

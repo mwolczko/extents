@@ -261,19 +261,19 @@ static void fileno_sort(list *ps) {
 }
 
 static void print_fileno(unsigned n) {
-  printf(no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", n);
+    printf(no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", n);
 }
 
 static void print_fileno_header(char *s) {
-  printf("%" FILENO_WIDTH_S "s ", s);
+    printf("%" FILENO_WIDTH_S "s ", s);
 }
 
 static void print_off_t(off_t o) {
-  printf(no_headers ? FIELD " " : FIELD_W " ", o);
+    printf(no_headers ? FIELD " " : FIELD_W " ", o);
 }
 
 static void print_off_t_hdr(char *s) {
-  printf(STRING_FIELD_FMT " ", s);
+    printf(STRING_FIELD_FMT " ", s);
 }
 
 static void print_extent(extent *e) {
@@ -283,28 +283,28 @@ static void print_extent(extent *e) {
 }
 
 static void print_sh_ext(off_t p, off_t len, extent *owner) {
-  off_t l= p - owner->p + owner->l;
-  print_off_t(l);
-  if (print_phys_addr) print_off_t(p);
-  print_off_t(len);
+    off_t l= p - owner->p + owner->l;
+    print_off_t(l);
+    if (print_phys_addr) print_off_t(p);
+    print_off_t(len);
 }
 
 static void print_sh_ext_with_fileno(off_t p, off_t len, extent *owner) {
-  print_fileno(owner->info->argno + 1);
-  print_sh_ext(p, len, owner);
+    print_fileno(owner->info->argno + 1);
+    print_sh_ext(p, len, owner);
 }
 
 static void print_header1(bool f) {
-  print_off_t_hdr("Logical");
-  if (print_phys_addr) print_off_t_hdr("Physical");
-  print_off_t_hdr("Length");
-  if (print_flags && f) fputs("  Flags", stdout);
+    print_off_t_hdr("Logical");
+    if (print_phys_addr) print_off_t_hdr("Physical");
+    print_off_t_hdr("Length");
+    if (print_flags && f) fputs("  Flags", stdout);
 }
 
 static void print_header2() {
-  print_off_t_hdr("Offset");
-  if (print_phys_addr) print_off_t_hdr("Offset");
-  print_off_t_hdr("");
+    print_off_t_hdr("Offset");
+    if (print_phys_addr) print_off_t_hdr("Offset");
+    print_off_t_hdr("");
 }
 
 static void print_header_for_file(unsigned i) {
@@ -387,7 +387,7 @@ static void print_unshared_extents() {
             unsigned n= 1;
             ITER(info[i].unsh, sh_ext*, sh, {
                 if (!no_headers) print_lineno(n++);
-                extent *owner = only(sh->owners);
+                extent *owner= only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
                 if (print_flags) {
                     sep(); fputs(flag_pr(owner->flags), stdout);
@@ -470,10 +470,10 @@ static void new_owner(extent *e) {
 
 // next extent under consideration
 static unsigned ei;
-static extent *nxt_e; // = get(extents, ei), or NULL if at end
+static extent *nxt_e; // == get(extents, ei), or NULL if at end
 
 static void next_extent() {
-    nxt_e = ++ei < n_elems(extents) ? get(extents, ei) : NULL;
+    nxt_e= ++ei < n_elems(extents) ? get(extents, ei) : NULL;
 }
 
 static void begin_next() {
@@ -501,7 +501,7 @@ static void add_to_shared(sh_ext *s) {
 
 static void add_to_unshared(sh_ext *sh) {
     if (is_singleton(sh->owners)) {
-        extent *owner = only(sh->owners);
+        extent *owner= only(sh->owners);
         append(owner->info->unsh, sh);
 	total_unshared++;
     }
@@ -654,8 +654,8 @@ static void report(off_t len) {
         last_len += len;
     else {
         print_last();
-        last_start = start1;
-        last_len = len;
+        last_start= start1;
+        last_len= len;
     }
 }
 
