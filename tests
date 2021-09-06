@@ -24,8 +24,8 @@ copy() {
 
 # clone it a few times
 copy ${T}0 ${T}1 # same
-copy ${T}0 ${T}2 ; echo foo | dd of=${T}2 bs=1 seek=500000 conv=notrunc 2>/dev/null   # one change
-copy ${T}2 ${T}3 ; echo bar | dd of=${T}3 bs=1 seek=999000 conv=notrunc 2>/dev/null   # two changes from ${T}0
+copy ${T}0 ${T}2 ; echo foo | dd of=${T}2 bs=1 seek=409600 conv=notrunc 2>/dev/null   # one change
+copy ${T}2 ${T}3 ; echo bar | dd of=${T}3 bs=1 seek=942080 conv=notrunc 2>/dev/null   # two changes from ${T}0
 copy ${T}0 ${T}4 ; echo -n foo >> ${T}4  # longer
 copy ${T}0 ${T}5 ; echo -n bar >> ${T}5  # longer but different
 copy ${T}0 ${T}6 ; echo -n barf >> ${T}6 # longest
@@ -60,9 +60,9 @@ do
 done >$TESTS
 
 cat >>$TESTS <<xxx
--bl -i 500000:1048576 ${T}2 ${T}4
--bl -i 500000:1048576 ${T}3 ${T}5
--bl -i 500000:1048576 ${T}3 ${T}6
+-bl -i 409600:1048576 ${T}2 ${T}4
+-bl -i 409600:1048576 ${T}3 ${T}5
+-bl -i 409600:1048576 ${T}3 ${T}6
 xxx
 
 if [ $(uname) = Linux ]

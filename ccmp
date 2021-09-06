@@ -26,13 +26,14 @@ usage() { echo usage: "$0" '<cmp-opts> file1 file2' ; }
 trap 'rm -f /tmp/cmpout$$ /tmp/cmperr$$' 0
 trap exit 2 15
 
-OrigArgs="$*"
+declare -a OrigArgs=("$*")
 CMPOPTS=
 ExtArgs=
 AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; print}'"'"
 AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; print; next}'"'"
 ONE=1 # exit on first difference
 BYTES=0
+SKIP=0
 VERBOSE=0
 ARGS=$(getopt -n "$0" -l "help,ignore-initial:,print_bytes,verbose,bytes:,quiet,silent,version" -o ":bhi:ln:sv" -- "$@")
 if [ $? -ne 0 ]; then
@@ -49,15 +50,20 @@ do
 	#AWK2="'{print}'"
         shift;;
       -[h?]|--help) help; exit 0;;
-      -i|--ignore-initial) CMPOPTS="$CMPOPTS -i $OPTARG"; shift 2;;
+      -i|--ignore-initial)
+	SKIP=1
+	CMPOPTS="$CMPOPTS -i $2"
+	ExtArgs="$ExtArgs -i $2"
+        AWK1="'"'{$1-='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
+	shift 2;;
       -l|--verbose)
         VERBOSE=1 CMPOPTS="$CMPOPTS -l" ONE=0
         AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
 	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
         shift;;
       -n|--bytes)
-        CMPOPTS="$CMPOPTS -n $OPTARG"
-        ExtArgs="$ExtArgs -n $OPTARG"
+        CMPOPTS="$CMPOPTS -n $2"
+        ExtArgs="$ExtArgs -n $2"
         shift 2;;
       -s|--quiet|silent) AWK1="'{}'"; AWK2="$AWK1"; shift;;
       -v|--version) version; exit;;
@@ -67,8 +73,16 @@ do
 done
 
 if (( BYTES && VERBOSE ))
-then AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
-     AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
+then
+    if (( ! SKIP ))
+    then
+	AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
+    else
+	AWK1="'"'{printf "%s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
+	AWK2="'"'/EOF/ {sub(/which is/,"after byte"); print}'"'"
+    fi
+    
 fi
 
 case $# in
@@ -78,8 +92,6 @@ case $# in
     4) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
     *) usage ; exit ;;
 esac
-
-set +o pipefail
 
 cmpAwkLoop() {
   declare -i Start1 Start2 Len Cmp
@@ -99,12 +111,13 @@ cmpAwkLoop() {
 }
 
 sync # extents can be fooled by write data in flight, so stabilize
-PATH=$(dirname "$0")":$PATH" extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
-
-Cmps=$?
-if [[ ${PIPESTATUS[0]} -ne 0 ]]
+PATH=$(dirname "$0")":$PATH"
+extents -c $ExtArgs "$A" "$B" | cmpAwkLoop
+declare -a SAVED_PS=(${PIPESTATUS[@]})
+Cmps=${SAVED_PS[1]}
+if [ ${SAVED_PS[0]} -ne 0 ]
 then # extents failed, fall back to cmp
-    cmp "$OrigArgs" ; Cmps=$?
+    cmp ${OrigArgs[@]} ; Cmps=$?
 else
     Cmps=$(( ! Cmps ))
 fi
