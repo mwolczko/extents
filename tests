@@ -1,6 +1,6 @@
 #!/usr/bin/env bash 
 
-trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$ /tmp/opts$$ /tmp/pairs$$ $TESTS' 0
+trap 'eval rm -f ${T}? /tmp/golden*$$ /tmp/output$$ /tmp/err$$ /tmp/opts$$ /tmp/pairs$$ $TESTS ${T}-self-?-?.dat' 0
 trap exit 2 15
 
 # put the files with shared extents here-- must be in a filesystem that supports reflinks
@@ -68,7 +68,13 @@ xxx
 if [ $(uname) = Linux ]
 then
     # extra tests for self-sharing files
-    :
+    (cd $TEST_DIR; ~-/mkself 1 1; mv self.dat ${T}-self-1-1.dat; ~-/mkself 2 2; mv self.dat ${T}-self-2-2.dat)
+    cat >>$TESTS <<-EOF
+    -i 0:4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
+    -i 0:4096 -n 4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
+    -bl -i 0:4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
+    -bl -i 0:4096 -n 4096 ${T}-self-1-1.dat ${T}-self-1-1.dat
+EOF
 fi
 
 FAILED=0

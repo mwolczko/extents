@@ -86,7 +86,7 @@ then
 fi
 
 case $# in
-    1) echo 1 file - call cmp; exit;; # XXX
+    1) cmp ${OrigArgs[@]} ; exit $? ;;
     2) A="$1" B="$2";;
     3) A="$1" B="$2" ExtArgs="$ExtArgs -i $3";;
     4) A="$1" B="$2" ExtArgs="$ExtArgs -i $3:$4";;
