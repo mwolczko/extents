@@ -37,13 +37,13 @@ trap exit 2 15
 declare -a OrigArgs=("$*")
 declare -a CMPOPTS
 declare -a ExtArgs
-AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; print}'"'" # for stdout
-AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; print; next}'"'" #stderr
+AWK1="'"'{$5+='"'"'"$Start1"'"'"'; $5 = $5 ","; sub(/, line [0-9]*/,""); print}'"'" # for stdout
+AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; $7 = $7 ","; sub(/, in line [0-9]*/,""); print; next}'"'" #stderr
 ONE=1 # exit on first difference
 BYTES=0
 SKIP=0
 VERBOSE=0
-ARGS=$(getopt -n "$0" -l "help,ignore-initial:,print_bytes,verbose,bytes:,quiet,silent,version" -o ":bhi:ln:sv" -- "$@")
+ARGS=$(getopt -n "$0" -l "help,ignore-initial:,print_bytes,verbose,bytes:,quiet,silent,version" -o "bhi:ln:sv" -- "$@")
 if [ $? -ne 0 ]; then
     usage; exit;
 fi
@@ -55,13 +55,13 @@ do
       -b|--print-bytes)
         BYTES=1  ONE=1
         CMPOPTS+=(-b)
-        AWK1="'"'{$5+='"'"'"$Start1"'"'"'; printf "%s %s %s %s %s, %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 }'"'"
+        AWK1="'"'{$5+='"'"'"$Start1"'"'"'; printf "%s %s %s %s %s %s %3s %s %3s %s\n", $1, $2, $3, $4, $5, $8, $9, $10, $11, $12 }'"'"
 	      #AWK2="'{print}'"
         shift;;
-      -[h?]|--help) help; exit 0;;
+      -h|--help) help; exit 0;;
       -i|--ignore-initial)
 	      SKIP=1
-	      CMPOPTS+=(-i "$2")
+	      #CMPOPTS+=(-i "$2")
 	      ExtArgs+=(-i "$2")
         AWK1="'"'{$1-='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
 	      shift 2;;
@@ -69,10 +69,11 @@ do
         VERBOSE=1 ONE=0
         CMPOPTS+=(-l)
         AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %3s\n", $1, $2, $3}'"'"
-      	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
+#      	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte");print}'"'"
+      	AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; print}'"'"
         shift;;
       -n|--bytes)
-        CMPOPTS+=(-n "$2")
+        #CMPOPTS+=(-n "$2")
         ExtArgs+=(-n "$2")
         shift 2;;
       -s|--quiet|silent) AWK1="'{}'"; AWK2="$AWK1"; shift;;
@@ -87,10 +88,12 @@ then
     if (( ! SKIP ))
     then
 	    AWK1="'"'{$1+='"'"'"$Start1"'"'"'; printf "%7s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
-	    AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
+#	    AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; sub(/which is/,"after byte"); print}'"'"
+    	    AWK2="'"'/EOF/ {$7+='"'"'"$Start1"'"'"'; print}'"'"
     else
 	    AWK1="'"'{printf "%s %3s %-4s %3s %s\n", $1, $2, $3, $4, $5}'"'"
-	    AWK2="'"'/EOF/ {sub(/which is/,"after byte"); print}'"'"
+#	    AWK2="'"'/EOF/ {sub(/which is/,"after byte"); print}'"'"
+    	    AWK2="'"'/EOF/ {print}'"'"
     fi
     
 fi
@@ -127,7 +130,7 @@ declare -a SAVED_PS=("${PIPESTATUS[@]}")
 Cmps=${SAVED_PS[1]}
 if [ ${SAVED_PS[0]} -ne 0 ]
 then # extents failed, fall back to cmp
-    cmp "${OrigArgs[@]}" ; Cmps=$?
+    cmp ${OrigArgs[@]} ; Cmps=$?
 else
     Cmps=$(( ! Cmps ))
 fi
