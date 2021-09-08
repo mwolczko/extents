@@ -289,28 +289,20 @@ static void print_sh_ext(off_t p, off_t len, extent *owner) {
     print_off_t(len);
 }
 
-static void print_sh_ext_with_fileno(off_t p, off_t len, extent *owner) {
-    print_fileno(owner->info->argno + 1);
-    print_sh_ext(p, len, owner);
-}
+static unsigned hdr_line;
 
-static void print_header1(bool f) {
-    print_off_t_hdr("Logical");
-    if (print_phys_addr) print_off_t_hdr("Physical");
-    print_off_t_hdr("Length");
-    if (print_flags && f) fputs("  Flags", stdout);
-}
-
-static void print_header2() {
-    print_off_t_hdr("Offset");
-    if (print_phys_addr) print_off_t_hdr("Offset");
-    print_off_t_hdr("");
-}
+static char *h(char *s1, char *s2) { return hdr_line==1 ? s1 : s2; }
 
 static void print_header_for_file(unsigned i) {
     printf("(%d) %s\n", i+1, info[i].name);
-    print_lineno_s("#"); print_header1(true); putchar('\n');
-    print_lineno_s("");  print_header2();     putchar('\n');
+    for (hdr_line= 1; hdr_line <= 2; hdr_line++) {
+        print_lineno_s(h("#", ""));
+        print_off_t_hdr(h("Logical", "Offset"));
+        if (print_phys_addr) print_off_t_hdr(h("Physical", "Offset"));
+        print_off_t_hdr(h("Length", ""));
+        if (print_flags) fputs(h("  Flags", ""), stdout);
+        putchar('\n');
+    }
 }
 
 static char flagbuf[200];
@@ -338,27 +330,32 @@ static unsigned max_n_shared= 0;
 static void print_shared_extents() {
     if (!no_headers) {
         if (!print_shared_only) puts("Shared: ");
-        print_lineno_s("#");
-        for (unsigned i= 0; i < max_n_shared; ++i) {
- 	        print_fileno_header("File"); print_header1(false); sep();
+        for (hdr_line= 1; hdr_line <= 2; hdr_line++) {
+            print_lineno_s(h("#", ""));
+            print_off_t_hdr(h("Length", ""));
+            if (print_phys_addr) print_off_t_hdr(h("Physical", "Offset"));
+            for (unsigned i = 0; i < max_n_shared; ++i) {
+                print_fileno_header(h("File", ""));
+                print_off_t_hdr(h("Logical", "Offset"));
+                sep();
+            }
+            putchar('\n');
         }
-        putchar('\n');
-        print_lineno_s("");
-        for (unsigned i= 0; i < max_n_shared; ++i) {
-	        print_fileno_header(""); print_header2(); sep();
-        }
-        putchar('\n');
     }
     unsigned e= 1;
     ITER(shared, sh_ext*, s_e, {
         if (!no_headers) print_lineno(e++);
+        print_off_t(s_e->len);
+        if (print_phys_addr) print_off_t(s_e->p);
         ITER(s_e->owners, extent*, owner, {
-	        print_sh_ext_with_fileno(s_e->p, s_e->len, owner); sep();
+            print_fileno(owner->info->argno + 1);
+            print_off_t(s_e->p - owner->p + owner->l);
+            sep();
         });
         putchar('\n');
         if (print_flags) {
 	        if (!no_headers) print_lineno_s("Flags:");
-	        bool first= true;
+            bool first= true;
             ITER(s_e->owners, extent*, owner, {
 		        char *f= flag_pr(owner->flags);
 		        if (no_headers) {
@@ -366,10 +363,7 @@ static void print_shared_extents() {
 		            fputs(f, stdout);
 		            first= false;
 		        } else
-                    printf("%-*s", FILENO_WIDTH
-                        + FIELD_WIDTH * (print_phys_addr ? 3 : 2)
-                        + (print_phys_addr ? 6 : 5),
-                        f);
+                    printf("%-*s" SEP, FILENO_WIDTH + FIELD_WIDTH, f);
             });
             putchar('\n');
         }
@@ -564,6 +558,7 @@ static void find_shares() {
             if (end > start_nxt) {
                 len= start_nxt - start;
                 off_t tail_len= end - start_nxt;
+                // more efficient to insert all at once, since they all go at the same place. XXX
                 ITER(owners, extent*, owner, {
                     extent *e= new_extent(owner->info, owner->l + len, start_nxt, tail_len, owner->flags);
                     insert(e);
