@@ -17,7 +17,7 @@
 void flags2str(unsigned flags, char *s, size_t n) { s[0]= '\0'; }
 
 static off_t l2p(unsigned fd, off_t off) {
-  struct log2phys ph = { 0, 0, off };
+  struct log2phys ph= { 0, 0, off };
   if (fcntl((int)fd, F_LOG2PHYS_EXT, &ph) >= 0)
     return ph.l2p_devoffset;
   if (errno == ERANGE)

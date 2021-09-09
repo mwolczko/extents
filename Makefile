@@ -5,13 +5,25 @@ CFLAGS := -I$(OS) -I. -O
 
 all : extents
 
-extents : extents.o fail.o mem.o $(OS)/fiemap.o
+extents : extents.o fail.o mem.o $(OS)/fiemap.o lists.o cmp.o sharing.o opts.o print.o sorting.o
 
-extents.o : extents.c extents.h fail.h mem.h fiemap.h
+extents.o : extents.c extents.h fail.h mem.h fiemap.h lists.h cmp.h sharing.h opts.h print.h sorting.h
 
 fail.o : fail.c
 
 mem.o : mem.c
+
+lists.o : lists.c
+
+cmp.o : cmp.c
+
+sharing.o : sharing.c
+
+opts.o : opts.c
+
+print.o : print.c
+
+sorting.o : sorting.c
 
 #$(OS)/fiemap.o : $(OS)/fiemap.c
 

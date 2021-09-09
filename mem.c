@@ -26,4 +26,10 @@ void *calloc_s(size_t n, size_t size)
   return res;
 }
 
-  
+void *realloc_s(void *mem, size_t size)
+{
+    void *res= realloc(mem, size);
+    if (res == NULL)
+        fail("realloc failed!\n");
+    return res;
+}
