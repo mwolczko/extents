@@ -15,7 +15,7 @@
 #include "mem.h"
 #include "fiemap.h"
 
-void flags2str(unsigned flags, char *s, size_t n) {
+void flags2str(unsigned flags, char *s, size_t n, bool sharing) {
     // This list copied from <fiemap.h>
     static unsigned f[] = {FIEMAP_EXTENT_LAST,
                            FIEMAP_EXTENT_UNKNOWN,
@@ -40,6 +40,7 @@ void flags2str(unsigned flags, char *s, size_t n) {
                          "MERGED",
                          "SHARED"};
     s[0]= '\0';
+    if (sharing) flags &= ~FIEMAP_EXTENT_LAST;
     for (unsigned i= 0; i < sizeof(f) / sizeof(unsigned); ++i)
         if (flags & f[i]) {
             strncat(s, nm[i], n);

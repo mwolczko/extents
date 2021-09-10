@@ -1,8 +1,6 @@
 // Functions to return extent info from the filesystem.
 // Extents are faked on macOS from runs of contiguous blocks
 
-// Mario Wolczko, Aug 2021
-
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -14,7 +12,7 @@
 #include "mem.h"
 #include "fiemap.h"
 
-void flags2str(unsigned flags, char *s, size_t n) { s[0]= '\0'; }
+void flags2str(unsigned flags, char *s, size_t n, bool sharing) { s[0]= '\0'; }
 
 static off_t l2p(unsigned fd, off_t off) {
   struct log2phys ph= { 0, 0, off };

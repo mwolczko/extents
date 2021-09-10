@@ -66,8 +66,8 @@ static void print_header_for_file(unsigned i) {
 
 static char flagbuf[200];
 
-char *flag_pr(unsigned flags) {
-    flags2str(flags, flagbuf, sizeof(flagbuf));
+char *flag_pr(unsigned flags, bool sharing) {
+  flags2str(flags, flagbuf, sizeof(flagbuf), sharing);
     return flagbuf;
 }
 
@@ -78,7 +78,7 @@ void print_extents_by_file() {
             extent *ext= &info[i].exts[e];
             if (!no_headers) print_lineno(e + 1);
             print_extent(ext);
-            if (print_flags) printf(" %s", flag_pr(ext->flags));
+            if (print_flags) printf(" %s", flag_pr(ext->flags, false));
             putchar('\n');
         }
     }
@@ -119,28 +119,25 @@ void print_shared_extents() {
                 print_off_t_hdr("");
             if (i < nfiles - 1) sep();
         }
-        /*
-        ITER(s_e->owners, extent*, owner, {
-            //print_fileno(owner->info->argno + 1);
-            print_off_t(s_e->p - owner->p + owner->l);
-            if (owner != last(s_e->owners)) sep();
-        })
-         */
         putchar('\n');
         if (print_flags) {
             if (!no_headers) print_lineno_s("Flags:");
+	    print_off_t_hdr("");
+	    if (print_phys_addr) print_off_t_hdr("");
+	    sep();
             bool first= true;
-            ITER(s_e->owners, extent*, owner, {
-                char *f= flag_pr(owner->flags);
-                if (no_headers) {
-                    if (!first) { putchar(','); putchar(' '); }
-                    fputs(f, stdout);
-                    first= false;
-                } else {
-                    printf("%-*s", FILENO_WIDTH + FIELD_WIDTH, f);
-                    if (owner != last(s_e->owners)) sep();
-                }
-            })
+	    for (unsigned i= 0; i < nfiles; ++i) {
+	      extent *owner= find_owner(s_e, i);
+	      char *f= owner == NULL ? "" : flag_pr(owner->flags, true);
+	      if (no_headers) {
+		if (!first) { putchar(','); putchar(' '); }
+		fputs(f, stdout);
+		first= false;
+	      } else {
+		print_off_t_hdr(f);
+		if (i < nfiles - 1) sep();	
+	      }
+	    }
             putchar('\n');
         }
     })
@@ -160,7 +157,7 @@ void print_unshared_extents() {
                 extent *owner= only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
                 if (print_flags) {
-                    sep(); fputs(flag_pr(owner->flags), stdout);
+		    sep(); fputs(flag_pr(owner->flags, true), stdout);
                 }
                 putchar('\n');
             })

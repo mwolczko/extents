@@ -86,7 +86,7 @@ static void read_ext(char *fn[]) {
 void check_all_extents_are_sane() {
     ITER(extents, extent*, e, {
         if (!flags_are_sane(e->flags))
-            fail("Extent has unexpected flag: %s\n", flag_pr(e->flags));
+	  fail("Extent in file %s has unexpected flag: %s\n", e->info->name, flag_pr(e->flags, false));
     })
 }
 
