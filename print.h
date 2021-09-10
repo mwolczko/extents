@@ -21,5 +21,6 @@ extern void print_shared_extents();
 extern void print_unshared_extents();
 extern void print_cmp(off_t start, off_t len);
 extern char *flag_pr(unsigned flags);
+extern void print_file_key();
 
 #endif //EXTENTS_PRINT_H

@@ -10,7 +10,6 @@
  * is merged into the current.
  */
 
-#include <stdlib.h>
 #include <assert.h>
 #include <string.h>
 
@@ -39,6 +38,14 @@ static void append_owner(extent *e) {
 static void new_owner(extent *e) {
     owners= new_list(-4);
     append_owner(e);
+}
+
+extent *find_owner(sh_ext *s, unsigned i) {
+    ITER(s->owners, extent*, e, {
+        if (e->info->argno == i)
+            return e;
+    })
+    return NULL;
 }
 
 // next extent under consideration

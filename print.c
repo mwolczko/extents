@@ -27,16 +27,6 @@ static void print_lineno_s(char *s)  { printf(LINENO_FMT "s ", s); }
 
 static void sep() { fputs(SEP, stdout); }
 
-static void csep() { fputs(no_headers ? " " : CSEP, stdout); }
-
-static void print_fileno(unsigned n) {
-    printf(no_headers ? "%d " : "%" FILENO_WIDTH_S "d ", n);
-}
-
-static void print_fileno_header(char *s) {
-    printf("%" FILENO_WIDTH_S "s ", s);
-}
-
 static void print_off_t(off_t o) {
     printf(no_headers ? FIELD " " : FIELD_W " ", o);
 }
@@ -60,16 +50,16 @@ static void print_sh_ext(off_t p, off_t len, extent *owner) {
 
 static unsigned hdr_line;
 
-static char *h(char *s1, char *s2) { return hdr_line==1 ? s1 : s2; }
+static char *h(char *s0, char *s1, char *s2) { return hdr_line == 0 ? s0 : hdr_line == 1 ? s1 : s2; }
 
 static void print_header_for_file(unsigned i) {
     printf("(%d) %s\n", i+1, info[i].name);
     for (hdr_line= 1; hdr_line <= 2; hdr_line++) {
-        print_lineno_s(h("#", ""));
-        print_off_t_hdr(h("Logical", "Offset"));
-        if (print_phys_addr) print_off_t_hdr(h("Physical", "Offset"));
-        print_off_t_hdr(h("Length", ""));
-        if (print_flags) fputs(h("  Flags", ""), stdout);
+        print_lineno_s(h("", "#", ""));
+        print_off_t_hdr(h("", "Logical", "Offset"));
+        if (print_phys_addr) print_off_t_hdr(h("", "Physical", "Offset"));
+        print_off_t_hdr(h("", "Length", ""));
+        if (print_flags) fputs(h("", "  Flags", ""), stdout);
         putchar('\n');
     }
 }
@@ -97,15 +87,20 @@ void print_extents_by_file() {
 void print_shared_extents() {
     if (!no_headers) {
         if (!print_shared_only) puts("Shared: ");
-        for (hdr_line= 1; hdr_line <= 2; hdr_line++) {
-            print_lineno_s(h("#", ""));
-            print_off_t_hdr(h("Length", ""));
-            if (print_phys_addr) print_off_t_hdr(h("Physical", "Offset"));
-            csep();
+        for (hdr_line= 0; hdr_line <= 2; hdr_line++) {
+            print_lineno_s(h("File#:", "#", ""));
+            print_off_t_hdr(h("", "Length", ""));
+            if (print_phys_addr) print_off_t_hdr(h("", "Physical", "Offset"));
+            sep();
             for (unsigned i= 0; i < max_n_shared; ++i) {
-                print_fileno_header(h("File", ""));
-                print_off_t_hdr(h("Logical", "Offset"));
-                if (i < max_n_shared - 1) csep();
+                //print_fileno_header(h("File", ""));
+                if (hdr_line == 0) {
+                    char buf[FIELD_WIDTH + 1];
+                    sprintf(buf, FIELD_W, (off_t)(i + 1));
+                    print_off_t_hdr(buf);
+                } else
+                    print_off_t_hdr(h("", "Logical", "Offset"));
+                if (i < max_n_shared - 1) sep();
             }
             putchar('\n');
         }
@@ -115,12 +110,22 @@ void print_shared_extents() {
         if (!no_headers) print_lineno(e++);
         print_off_t(s_e->len);
         if (print_phys_addr) print_off_t(s_e->p);
-        csep();
+        sep();
+        for (unsigned i= 0; i < nfiles; ++i) {
+            extent *owner= find_owner(s_e, i);
+            if (owner != NULL)
+                print_off_t(s_e->p - owner->p + owner->l);
+            else
+                print_off_t_hdr("");
+            if (i < nfiles - 1) sep();
+        }
+        /*
         ITER(s_e->owners, extent*, owner, {
-            print_fileno(owner->info->argno + 1);
+            //print_fileno(owner->info->argno + 1);
             print_off_t(s_e->p - owner->p + owner->l);
-            if (owner != last(s_e->owners)) csep();
+            if (owner != last(s_e->owners)) sep();
         })
+         */
         putchar('\n');
         if (print_flags) {
             if (!no_headers) print_lineno_s("Flags:");
@@ -133,7 +138,7 @@ void print_shared_extents() {
                     first= false;
                 } else {
                     printf("%-*s", FILENO_WIDTH + FIELD_WIDTH, f);
-                    if (owner != last(s_e->owners)) csep();
+                    if (owner != last(s_e->owners)) sep();
                 }
             })
             putchar('\n');
@@ -155,7 +160,7 @@ void print_unshared_extents() {
                 extent *owner= only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
                 if (print_flags) {
-                    csep(); fputs(flag_pr(owner->flags), stdout);
+                    sep(); fputs(flag_pr(owner->flags), stdout);
                 }
                 putchar('\n');
             })
@@ -167,3 +172,8 @@ void print_cmp(off_t start, off_t len) {
     printf(FIELD " " FIELD " " FIELD "\n", start + skip1, start + skip2, len);
 }
 
+void print_file_key() {
+    for (unsigned i= 0; i < nfiles; ++i)
+        printf("(%d) %s\n", i + 1, info[i].name);
+    putchar('\n');
+}

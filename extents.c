@@ -101,10 +101,13 @@ int main(int argc, char *argv[]) {
         phys_sort();
         find_shares();
         ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
-        log_sort(shared);
-	    bool pr_sh= !print_unshared_only && !is_empty(shared);
+        //log_sort(shared);
+        bool pr_sh= !print_unshared_only && !is_empty(shared);
 	    bool pr_unsh= !print_shared_only && total_unshared > 0;
-        if (pr_sh) print_shared_extents();
+        if (pr_sh) {
+            if (!no_headers) print_file_key();
+            print_shared_extents();
+        }
 	    if (pr_sh && pr_unsh || no_headers) putchar('\n');
         if (pr_unsh) print_unshared_extents();
     }

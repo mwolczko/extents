@@ -41,8 +41,8 @@ clean:
 	make -C $(OS) clean
 
 parfait:
-	export CC=/Users/mario/Work/parfait-tools-5.2/bin/parfait-gcc
-	export PARFAIT_NATIVEGCC=`which cc`
+	export CC=/Users/mario/Work/parfait-tools-5.2/bin/parfait-clang
+	export PARFAIT_NATIVECLANG=`which cc`
 	parfait -e all -W -p --disable=unchecked-result-call-stdc-ped-printf --disable=unchecked-result-call-stdc-ped-io `pwd`
 
 mkself: mkself.o fail.o

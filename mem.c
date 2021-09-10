@@ -1,19 +1,12 @@
 #include <stdlib.h>
 #include "fail.h"
+#include "mem.h"
 
 void *malloc_s(size_t size)
 {
   void *res= malloc(size);
   if (res == NULL)
     fail("malloc failed!\n");
-  return res;
-}
-
-void *alloca_s(size_t size)
-{
-  void *res= alloca(size);
-  if (res == NULL)
-    fail("alloca failed!\n");
   return res;
 }
 
