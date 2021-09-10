@@ -49,6 +49,16 @@ void flags2str(unsigned flags, char *s, size_t n) {
     if (s[strlen(s) - 1] == ' ') s[strlen(s) - 1]= '\0';
 }
 
+bool flags_are_sane(unsigned flags) {
+    return (flags & FIEMAP_EXTENT_UNKNOWN)     == 0
+        && (flags & FIEMAP_EXTENT_DELALLOC)    == 0
+        && (flags & FIEMAP_EXTENT_ENCODED)     == 0
+        && (flags & FIEMAP_EXTENT_NOT_ALIGNED) == 0
+        && (flags & FIEMAP_EXTENT_DATA_INLINE) == 0
+        && (flags & FIEMAP_EXTENT_DATA_TAIL)   == 0
+        && (flags & FIEMAP_EXTENT_UNWRITTEN)   == 0;
+}
+
 void get_extents(fileinfo *pfi, off_t max_len) {
     off_t start= roundDown(pfi->skip, blk_sz);
     off_t len= max_len > 0 ? max_len : pfi->size - pfi->skip;;

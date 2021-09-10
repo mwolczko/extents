@@ -2,6 +2,7 @@
 #define EXTENTS_H
 
 #include <sys/types.h>
+#include <stdbool.h>
 #include "lists.h"
 
 typedef struct fileinfo fileinfo;
@@ -45,5 +46,7 @@ extern unsigned n_ext; // # of extents in all files
 extern list *extents; // list of all extent* from all files
 
 extern off_t end_l(extent *e);
+
+extern void check_all_extents_are_sane();
 
 #endif

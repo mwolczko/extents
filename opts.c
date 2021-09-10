@@ -10,13 +10,13 @@
 #include "extents.h"
 
 bool
-        print_flags        = false,
-        print_extents_only = false,
-        print_shared_only  = false,
-        print_unshared_only= false,
-        no_headers         = false,
-        print_phys_addr    = false,
-        cmp_output         = false;
+    print_flags        = false,
+    print_extents_only = false,
+    print_shared_only  = false,
+    print_unshared_only= false,
+    no_headers         = false,
+    print_phys_addr    = false,
+    cmp_output         = false;
 
 off_t max_cmp= -1, skip1= 0, skip2= 0;
 
@@ -70,7 +70,7 @@ void args(int argc, char *argv[])
             { "print_unshared_only",  no_argument, NULL, 'u' },
             { "dont_fail_silently",   no_argument, NULL, 'v' },
     };
-    for (int c; c= getopt_long(argc, argv, "cfhnpPsuvb:i:", longopts, NULL), c != -1; )
+    for (int c; c= getopt_long(argc, argv, "cfhnpPsuvb:i:", longopts, NULL), c != -1; ) {
         switch (c) {
             case 'b':
                 if (sscanf(optarg, FIELD, &max_cmp) != 1 || max_cmp <= 0)
@@ -78,16 +78,16 @@ void args(int argc, char *argv[])
                 break;
             case 'i':
                 if (sscanf(optarg, FIELD ":" FIELD, &skip1, &skip2) != 2) {
-            if (sscanf(optarg, FIELD, &skip1) == 1) {
-                skip2= skip1;
-            } else
-                skip1= -1;
-        }
+                    if (sscanf(optarg, FIELD, &skip1) == 1)
+                        skip2= skip1;
+                    else
+                        skip1= -1;
+                }
                 if (skip1 < 0 || skip2 < 0)
                     fail("arg to -i must be N or N:M (N,M non-negative integers)\n");
                 break;
             case 'c': cmp_output=          true;
-                fail_silently=       true; break;
+                      fail_silently=       true; break;
             case 'f': print_flags=         true; break;
             case 'n': no_headers=          true; break;
             case 'P': print_extents_only=  true; break;
@@ -98,6 +98,7 @@ void args(int argc, char *argv[])
             case 'h': print_help(argv[0]); break;
             default : usage(argv[0]);
         }
+    }
     nfiles= (unsigned)(argc - optind);
     if (nfiles < 1) usage(argv[0]);
     if (print_shared_only && print_unshared_only)

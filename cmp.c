@@ -80,6 +80,7 @@ static void report(off_t len) {
 
 // trunc at max_cmp
 void generate_cmp_output() {
+    check_all_extents_are_sane();
     if (max_cmp < 0) {
         off_t size1= info[0].size - info[0].skip,
                 size2= info[1].size - info[1].skip;

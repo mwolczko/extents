@@ -58,3 +58,7 @@ void get_extents(fileinfo *pfi, off_t max_len)
   }
   if (in) new_extent(pfi, l, p, limit - l);
 }
+
+bool flags_are_sane(unsigned flags) {
+    return true; // no flags, no insanity
+}

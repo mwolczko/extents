@@ -83,6 +83,13 @@ static void read_ext(char *fn[]) {
             append(extents, &info[i].exts[e]);
 }
 
+void check_all_extents_are_sane() {
+    ITER(extents, extent*, e, {
+        if (!flags_are_sane(e->flags))
+            fail("Extent has unexpected flag: %s\n", flag_pr(e->flags));
+    })
+}
+
 int main(int argc, char *argv[]) {
     args(argc, argv);
     read_ext(&argv[optind]);

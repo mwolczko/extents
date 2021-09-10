@@ -19,6 +19,7 @@
 #include "mem.h"
 #include "sharing.h"
 #include "opts.h"
+#include "sorting.h"
 
 // components of the current shared extent being processed
 static off_t start, len, end;
@@ -30,7 +31,6 @@ list *shared;
 unsigned max_n_shared= 0;
 
 unsigned total_unshared= 0;
-
 
 static void append_owner(extent *e) {
     append(owners, e);
@@ -128,6 +128,7 @@ static extent *new_extent(fileinfo *pfi, off_t l, off_t p, off_t len, unsigned f
 }
 
 void find_shares() {
+    check_all_extents_are_sane();
     shared= new_list(-10); // SWAG
     if (n_ext == 0) return;
     ei= 0; begin_next();

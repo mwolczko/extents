@@ -76,7 +76,7 @@ static void print_header_for_file(unsigned i) {
 
 static char flagbuf[200];
 
-static char *flag_pr(unsigned flags) {
+char *flag_pr(unsigned flags) {
     flags2str(flags, flagbuf, sizeof(flagbuf));
     return flagbuf;
 }
@@ -112,33 +112,32 @@ void print_shared_extents() {
     }
     unsigned e= 1;
     ITER(shared, sh_ext*, s_e, {
-            if (!no_headers) print_lineno(e++);
-            print_off_t(s_e->len);
-            if (print_phys_addr) print_off_t(s_e->p);
-            csep();
+        if (!no_headers) print_lineno(e++);
+        print_off_t(s_e->len);
+        if (print_phys_addr) print_off_t(s_e->p);
+        csep();
+        ITER(s_e->owners, extent*, owner, {
+            print_fileno(owner->info->argno + 1);
+            print_off_t(s_e->p - owner->p + owner->l);
+            if (owner != last(s_e->owners)) csep();
+        })
+        putchar('\n');
+        if (print_flags) {
+            if (!no_headers) print_lineno_s("Flags:");
+            bool first= true;
             ITER(s_e->owners, extent*, owner, {
-                print_fileno(owner->info->argno + 1);
-                print_off_t(s_e->p - owner->p + owner->l);
-                if (owner != last(s_e->owners)) csep();
-            });
+                char *f= flag_pr(owner->flags);
+                if (no_headers) {
+                    if (!first) { putchar(','); putchar(' '); }
+                    fputs(f, stdout);
+                    first= false;
+                } else {
+                    printf("%-*s", FILENO_WIDTH + FIELD_WIDTH, f);
+                    if (owner != last(s_e->owners)) csep();
+                }
+            })
             putchar('\n');
-            if (print_flags) {
-                if (!no_headers) print_lineno_s("Flags:");
-                bool first= true;
-                ITER(s_e->owners, extent*, owner, {
-                        char *f= flag_pr(owner->flags);
-                        if (no_headers) {
-                            if (!first) { putchar(','); putchar(' '); }
-                            fputs(f, stdout);
-                            first= false;
-                        } else {
-                            printf("%-*s", FILENO_WIDTH + FIELD_WIDTH, f);
-                            if (owner != last(s_e->owners)) csep();
-                        }
-
-                });
-                putchar('\n');
-            }
+        }
     })
 }
 
@@ -152,13 +151,13 @@ void print_unshared_extents() {
             if (!no_headers) print_header_for_file(i);
             unsigned n= 1;
             ITER(info[i].unsh, sh_ext*, sh, {
-                    if (!no_headers) print_lineno(n++);
-                    extent *owner= only(sh->owners);
-                    print_sh_ext(sh->p, sh->len, owner);
-                    if (print_flags) {
-                        csep(); fputs(flag_pr(owner->flags), stdout);
-                    }
-                    putchar('\n');
+                if (!no_headers) print_lineno(n++);
+                extent *owner= only(sh->owners);
+                print_sh_ext(sh->p, sh->len, owner);
+                if (print_flags) {
+                    csep(); fputs(flag_pr(owner->flags), stdout);
+                }
+                putchar('\n');
             })
         }
     }
