@@ -25,14 +25,14 @@ static void print_lineno(unsigned n) { printf(LINENO_FMT "d ", n); }
 
 static void print_lineno_s(char *s)  { printf(LINENO_FMT "s ", s); }
 
-static void sep() { fputs(SEP, stdout); }
+static void sep() { if (!no_headers) fputs(SEP, stdout); }
 
 static void print_off_t(off_t o) {
     printf(no_headers ? FIELD " " : FIELD_W " ", o);
 }
 
-static void print_off_t_hdr(char *s) {
-    printf(STRING_FIELD_FMT " ", s);
+static void print_off_t_s(char *s) {
+    printf(no_headers ? "%s" : STRING_FIELD_FMT " ", s);
 }
 
 static void print_extent(extent *e) {
@@ -56,9 +56,9 @@ static void print_header_for_file(unsigned i) {
     printf("(%d) %s\n", i+1, info[i].name);
     for (hdr_line= 1; hdr_line <= 2; hdr_line++) {
         print_lineno_s(h("", "#", ""));
-        print_off_t_hdr(h("", "Logical", "Offset"));
-        if (print_phys_addr) print_off_t_hdr(h("", "Physical", "Offset"));
-        print_off_t_hdr(h("", "Length", ""));
+        print_off_t_s(h("", "Logical", "Offset"));
+        if (print_phys_addr) print_off_t_s(h("", "Physical", "Offset"));
+        print_off_t_s(h("", "Length", ""));
         if (print_flags) fputs(h("", "  Flags", ""), stdout);
         putchar('\n');
     }
@@ -67,7 +67,7 @@ static void print_header_for_file(unsigned i) {
 static char flagbuf[200];
 
 char *flag_pr(unsigned flags, bool sharing) {
-  flags2str(flags, flagbuf, sizeof(flagbuf), sharing);
+    flags2str(flags, flagbuf, sizeof(flagbuf), sharing);
     return flagbuf;
 }
 
@@ -89,18 +89,17 @@ void print_shared_extents() {
         if (!print_shared_only) puts("Shared: ");
         for (hdr_line= 0; hdr_line <= 2; hdr_line++) {
             print_lineno_s(h("File#:", "#", ""));
-            print_off_t_hdr(h("", "Length", ""));
-            if (print_phys_addr) print_off_t_hdr(h("", "Physical", "Offset"));
+            print_off_t_s(h("", "Length", ""));
+            if (print_phys_addr) print_off_t_s(h("", "Physical", "Offset"));
             sep();
-            for (unsigned i= 0; i < max_n_shared; ++i) {
-                //print_fileno_header(h("File", ""));
+            for (unsigned i= 0; i < nfiles; ++i) {
                 if (hdr_line == 0) {
                     char buf[FIELD_WIDTH + 1];
                     sprintf(buf, FIELD_W, (off_t)(i + 1));
-                    print_off_t_hdr(buf);
+                    print_off_t_s(buf);
                 } else
-                    print_off_t_hdr(h("", "Logical", "Offset"));
-                if (i < max_n_shared - 1) sep();
+                    print_off_t_s(h("", "Logical", "Offset"));
+                if (i < nfiles - 1) sep();
             }
             putchar('\n');
         }
@@ -116,25 +115,28 @@ void print_shared_extents() {
             if (owner != NULL)
                 print_off_t(s_e->p - owner->p + owner->l);
             else
-                print_off_t_hdr("");
+	        print_off_t_s(no_headers ? "- " : "");
             if (i < nfiles - 1) sep();
         }
         putchar('\n');
         if (print_flags) {
             if (!no_headers) print_lineno_s("Flags:");
-	    print_off_t_hdr("");
-	    if (print_phys_addr) print_off_t_hdr("");
+	    print_off_t_s("");
+	    if (print_phys_addr) print_off_t_s("");
 	    sep();
             bool first= true;
 	    for (unsigned i= 0; i < nfiles; ++i) {
-	      extent *owner= find_owner(s_e, i);
-	      char *f= owner == NULL ? "" : flag_pr(owner->flags, true);
-	      if (no_headers) {
-		if (!first) { putchar(','); putchar(' '); }
-		fputs(f, stdout);
-		first= false;
-	      } else {
-		print_off_t_hdr(f);
+	        extent *owner= find_owner(s_e, i);
+	        char *f= owner == NULL ? "" : flag_pr(owner->flags, true);
+	        if (no_headers) {
+		    if (!first) {
+		        putchar(',');
+		        if (!no_headers) putchar(' ');
+		    }
+		    fputs(f, stdout);
+		    first= false;
+	        } else {
+		    print_off_t_s(f);
 		if (i < nfiles - 1) sep();	
 	      }
 	    }
@@ -152,7 +154,7 @@ void print_unshared_extents() {
             log_sort(unsh);
             if (!no_headers) print_header_for_file(i);
             unsigned n= 1;
-            ITER(info[i].unsh, sh_ext*, sh, {
+            ITER(unsh, sh_ext*, sh, {
                 if (!no_headers) print_lineno(n++);
                 extent *owner= only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
@@ -174,3 +176,17 @@ void print_file_key() {
         printf("(%d) %s\n", i + 1, info[i].name);
     putchar('\n');
 }
+
+void debug_print_extents(unsigned ei, extent *cur, list *owners) {
+  putchar('{');
+  if (owners != NULL) ITER(owners, extent*, owner, printf("%d,", owner->info->argno));
+  putchar('}');
+  if (cur != NULL) print_extent(cur);
+  putchar('!');
+  for (unsigned i= ei; i < n_elems(extents); ++i) {
+    extent *e= get(extents, i);
+    printf("%d: ", e->info->argno); print_extent(e); putchar(';');
+  }
+  putchar('\n');
+}
+

@@ -16,7 +16,6 @@ struct sh_ext {
 extern list *shared; // list of sh_ext*
 
 extern unsigned total_unshared;
-extern unsigned max_n_shared;
 
 extern void find_shares();
 extern extent *find_owner(sh_ext *s, unsigned i);

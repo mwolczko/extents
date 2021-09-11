@@ -28,7 +28,7 @@ int extent_list_cmp_phys(extent **pa, extent **pb)
          : 0;
 }
 
-void phys_sort() {
+void phys_sort_extents() {
     qsort(&GET(extents, 0), n_ext, sizeof(extent *), (__compar_fn_t) &extent_list_cmp_phys);
 }
 

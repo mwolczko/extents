@@ -1,13 +1,15 @@
 /*
- * determine extent sharing -- find_shares()
+ * Determine extent sharing -- find_shares()
  *
  * This algorithm takes a single list of all extents (variable: extents), and sorts it by physical address.
  * It then works through the list, comparing the current sh_ext (expressed in terms of its components) with the
- * next extent.  This can either (a) cause the current sh_ext to be finished (if it completely precedes the next extent),
- * (b) if the current sh_ext overlaps the next extent then it is split into the part which precedes it and the remainder,
+ * next extent.  This can either 
+ * (a) cause the current sh_ext to be finished (if it completely precedes the next extent),
+ * (b) if the current sh_ext overlaps the next extent then the current is split into the part which precedes it and the 
+ *     remainders; the remainders are put back in the work list, 
  * (c) if the current sh_ext begins at the same offset as the next extent but is shorter, the next extent is split and
- * the first part merged into the current sh_ext, or (d) the current sh_ext and next extent are the same, and the next
- * is merged into the current.
+ *     the first part merged into the current sh_ext, or 
+ * (d) the current sh_ext and next extent are the same, and the next is merged into the current.
  */
 
 #include <assert.h>
@@ -27,25 +29,13 @@ static extent *cur_e;
 
 list *shared;
 
-unsigned max_n_shared= 0;
-
 unsigned total_unshared= 0;
 
-static void append_owner(extent *e) {
-    append(owners, e);
-}
+static void append_owner(extent *e) { append(owners, e); }
 
 static void new_owner(extent *e) {
     owners= new_list(-4);
     append_owner(e);
-}
-
-extent *find_owner(sh_ext *s, unsigned i) {
-    ITER(s->owners, extent*, e, {
-        if (e->info->argno == i)
-            return e;
-    })
-    return NULL;
 }
 
 // next extent under consideration
@@ -73,12 +63,6 @@ static sh_ext *new_sh_ext() {
     return res;
 }
 
-static void add_to_shared(sh_ext *s) {
-    append(shared, s);
-    unsigned n= n_elems(s->owners);
-    if (n > max_n_shared) max_n_shared= n;
-}
-
 static void add_to_unshared(sh_ext *sh) {
     if (is_singleton(sh->owners)) {
         extent *owner= only(sh->owners);
@@ -94,11 +78,11 @@ static void process_current() {
     if (is_sing || (cmp_output && skip1 != skip2))
         add_to_unshared(s);
     if (!is_sing)
-        add_to_shared(s);
+        append(shared, s);
     if (ei < n_elems(extents)) begin_next();
 }
 
-static void swap_e(extent **a, extent **b) { extent *t= *a; *b= *a; *b= t; }
+static void swap_e(extent **a, extent **b) { extent *t= *a; *a= *b; *b= t; }
 
 // add a new extent to the list in the right place
 static void insert(extent *e) {
@@ -136,10 +120,14 @@ static extent *new_extent(fileinfo *pfi, off_t l, off_t p, off_t len, unsigned f
 
 void find_shares() {
     check_all_extents_are_sane();
+    phys_sort_extents();
     shared= new_list(-10); // SWAG
     if (n_ext == 0) return;
-    ei= 0; begin_next();
+    ei= 0;
+    //puts("--");print_shared_extents();debug_print_extents(ei, cur_e, owners);
+    begin_next();
     while (nxt_e != NULL) {
+        //puts("--");print_shared_extents();debug_print_extents(ei, cur_e, owners);
         off_t start_nxt= nxt_e->p;
         if (start < start_nxt) {
             if (end > start_nxt) {
@@ -168,3 +156,12 @@ void find_shares() {
     }
     process_current();
 }
+
+extent *find_owner(sh_ext *s, unsigned i) {
+    ITER(s->owners, extent*, e, {
+        if (e->info->argno == i)
+            return e;
+    })
+    return NULL;
+}
+

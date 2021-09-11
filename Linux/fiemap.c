@@ -47,17 +47,18 @@ void flags2str(unsigned flags, char *s, size_t n, bool sharing) {
             n= max(n - strlen(nm[i]), 0);
             if (n > 0) strncat(s, " ", n--);
         }
-    if (s[strlen(s) - 1] == ' ') s[strlen(s) - 1]= '\0';
+    unsigned l= strlen(s) - 1;
+    if (s[l] == ' ') s[l]= '\0';
 }
 
 bool flags_are_sane(unsigned flags) {
-    return (flags & FIEMAP_EXTENT_UNKNOWN)     == 0
-        && (flags & FIEMAP_EXTENT_DELALLOC)    == 0
-        && (flags & FIEMAP_EXTENT_ENCODED)     == 0
-        && (flags & FIEMAP_EXTENT_NOT_ALIGNED) == 0
-        && (flags & FIEMAP_EXTENT_DATA_INLINE) == 0
-        && (flags & FIEMAP_EXTENT_DATA_TAIL)   == 0
-        && (flags & FIEMAP_EXTENT_UNWRITTEN)   == 0;
+  return 0 == (flags & (FIEMAP_EXTENT_UNKNOWN
+		      | FIEMAP_EXTENT_DELALLOC
+		      | FIEMAP_EXTENT_ENCODED
+		      | FIEMAP_EXTENT_NOT_ALIGNED
+		      | FIEMAP_EXTENT_DATA_INLINE
+		      | FIEMAP_EXTENT_DATA_TAIL
+		      | FIEMAP_EXTENT_UNWRITTEN));
 }
 
 void get_extents(fileinfo *pfi, off_t max_len) {
@@ -68,11 +69,11 @@ void get_extents(fileinfo *pfi, off_t max_len) {
         fail("Can't get extents : %s\n", strerror(errno));
     unsigned n= fm.fm_mapped_extents;
     struct fiemap *pfm= malloc_s(sizeof(struct fiemap) + n * sizeof(struct fiemap_extent));
-    pfm->fm_start=      start;
-    pfm->fm_length=       len;
-    pfm->fm_flags=          0;
-    pfm->fm_extent_count=   n;
-    if (ioctl(pfi->fd, FS_IOC_FIEMAP, pfm) < 0)
+    pfm->fm_start= (__u64)start;
+    pfm->fm_length= (__u64)len;
+    pfm->fm_flags= (__u32)0;
+    pfm->fm_extent_count= (__u32)n;
+    if (ioctl((int)pfi->fd, FS_IOC_FIEMAP, pfm) < 0)
         fail("Can't get list of extents : %s\n", strerror(errno));
     if (pfm->fm_mapped_extents != n)
         fail("file is changing: %s; number of extents changed\n", pfi->name);

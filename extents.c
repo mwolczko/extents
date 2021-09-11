@@ -86,7 +86,7 @@ static void read_ext(char *fn[]) {
 void check_all_extents_are_sane() {
     ITER(extents, extent*, e, {
         if (!flags_are_sane(e->flags))
-	  fail("Extent in file %s has unexpected flag: %s\n", e->info->name, flag_pr(e->flags, false));
+            fail("Extent in file %s has unexpected flag: %s\n", e->info->name, flag_pr(e->flags, false));
     })
 }
 
@@ -98,17 +98,16 @@ int main(int argc, char *argv[]) {
     else if (cmp_output)
         generate_cmp_output();
     else {
-        phys_sort();
         find_shares();
-        ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
-        //log_sort(shared);
-        bool pr_sh= !print_unshared_only && !is_empty(shared);
-	    bool pr_unsh= !print_shared_only && total_unshared > 0;
+        //ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
+	bool pr_sh= !print_unshared_only && !is_empty(shared);
+        bool pr_unsh= !print_shared_only && total_unshared > 0;
         if (pr_sh) {
+            log_sort(shared);
             if (!no_headers) print_file_key();
             print_shared_extents();
         }
-	    if (pr_sh && pr_unsh || no_headers) putchar('\n');
+        if (pr_sh && pr_unsh || no_headers) putchar('\n');
         if (pr_unsh) print_unshared_extents();
     }
     return 0;
