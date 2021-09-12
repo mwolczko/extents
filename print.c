@@ -115,31 +115,31 @@ void print_shared_extents() {
             if (owner != NULL)
                 print_off_t(s_e->p - owner->p + owner->l);
             else
-	        print_off_t_s(no_headers ? "- " : "");
+	            print_off_t_s(no_headers ? "- " : "");
             if (i < nfiles - 1) sep();
         }
         putchar('\n');
         if (print_flags) {
             if (!no_headers) print_lineno_s("Flags:");
-	    print_off_t_s("");
-	    if (print_phys_addr) print_off_t_s("");
-	    sep();
+	        print_off_t_s("");
+            if (print_phys_addr) print_off_t_s("");
+	        sep();
             bool first= true;
-	    for (unsigned i= 0; i < nfiles; ++i) {
-	        extent *owner= find_owner(s_e, i);
-	        char *f= owner == NULL ? "" : flag_pr(owner->flags, true);
-	        if (no_headers) {
-		    if (!first) {
-		        putchar(',');
-		        if (!no_headers) putchar(' ');
-		    }
-		    fputs(f, stdout);
-		    first= false;
-	        } else {
-		    print_off_t_s(f);
-		if (i < nfiles - 1) sep();	
-	      }
-	    }
+	        for (unsigned i= 0; i < nfiles; ++i) {
+	            extent *owner= find_owner(s_e, i);
+	            char *f= owner == NULL ? "" : flag_pr(owner->flags, true);
+	            if (no_headers) {
+		            if (!first) {
+		                putchar(',');
+		                if (!no_headers) putchar(' ');
+		            }
+		            fputs(f, stdout);
+		            first= false;
+	            } else {
+		            print_off_t_s(f);
+		            if (i < nfiles - 1) sep();
+	            }
+	        }
             putchar('\n');
         }
     })
@@ -159,7 +159,7 @@ void print_unshared_extents() {
                 extent *owner= only(sh->owners);
                 print_sh_ext(sh->p, sh->len, owner);
                 if (print_flags) {
-		    sep(); fputs(flag_pr(owner->flags, true), stdout);
+		            sep(); fputs(flag_pr(owner->flags, true), stdout);
                 }
                 putchar('\n');
             })
@@ -178,15 +178,17 @@ void print_file_key() {
 }
 
 void debug_print_extents(unsigned ei, extent *cur, list *owners) {
-  putchar('{');
-  if (owners != NULL) ITER(owners, extent*, owner, printf("%d,", owner->info->argno));
-  putchar('}');
-  if (cur != NULL) print_extent(cur);
-  putchar('!');
-  for (unsigned i= ei; i < n_elems(extents); ++i) {
-    extent *e= get(extents, i);
-    printf("%d: ", e->info->argno); print_extent(e); putchar(';');
-  }
-  putchar('\n');
+    putchar('{');
+    if (owners != NULL) ITER(owners, extent*, owner, printf("%d,", owner->info->argno));
+    putchar('}');
+    if (cur != NULL) print_extent(cur);
+    putchar('!');
+    for (unsigned i= ei; i < n_elems(extents); ++i) {
+        extent *e= get(extents, i);
+        printf("%d: ", e->info->argno);
+        print_extent(e);
+        putchar(';');
+    }
+    putchar('\n');
 }
 

@@ -99,8 +99,7 @@ int main(int argc, char *argv[]) {
         generate_cmp_output();
     else {
         find_shares();
-        //ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
-	bool pr_sh= !print_unshared_only && !is_empty(shared);
+     	bool pr_sh= !print_unshared_only && !is_empty(shared);
         bool pr_unsh= !print_shared_only && total_unshared > 0;
         if (pr_sh) {
             log_sort(shared);

@@ -37,7 +37,3 @@ static int extent_list_cmp_fileno(extent **a, extent **b) {
          : (*a)->info->argno < (*b)->info->argno ? -1
          : 0;
 }
-
-void fileno_sort(list *ps) {
-    qsort(ps->elems, ps->nelems, sizeof(void *), (__compar_fn_t) &extent_list_cmp_fileno);
-}

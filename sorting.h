@@ -12,6 +12,4 @@ int extent_list_cmp_phys(extent **pa, extent **pb);
 
 extern void phys_sort_extents();
 
-extern void fileno_sort(list *ps);
-
 #endif //EXTENTS_SORTING_H

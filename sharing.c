@@ -124,10 +124,8 @@ void find_shares() {
     shared= new_list(-10); // SWAG
     if (n_ext == 0) return;
     ei= 0;
-    //puts("--");print_shared_extents();debug_print_extents(ei, cur_e, owners);
     begin_next();
     while (nxt_e != NULL) {
-        //puts("--");print_shared_extents();debug_print_extents(ei, cur_e, owners);
         off_t start_nxt= nxt_e->p;
         if (start < start_nxt) {
             if (end > start_nxt) {
