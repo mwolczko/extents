@@ -123,7 +123,7 @@ cmpAwkLoop() {
   return "$Cmps"
 }
 
-sync # extents can be fooled by write data in flight, so stabilize
+#sync # extents can be fooled by write data in flight, so stabilize - use fsync in extents? XXX
 PATH=$(dirname "$0")":$PATH"
 extents -c "${ExtArgs[@]}" "$A" "$B" | cmpAwkLoop
 declare -a SAVED_PS=("${PIPESTATUS[@]}")
