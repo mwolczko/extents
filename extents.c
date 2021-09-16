@@ -102,9 +102,16 @@ int main(int argc, char *argv[]) {
      	bool pr_sh= !print_unshared_only && !is_empty(shared);
         bool pr_unsh= !print_shared_only && total_unshared > 0;
         if (pr_sh) {
+	    ITER(shared, sh_ext*, sh_e, fileno_sort(((sh_ext *)sh_e)->owners))
             log_sort(shared);
-            if (!no_headers) print_file_key();
-            print_shared_extents();
+            if (no_headers) 
+		print_shared_extents_no_header();
+	    else {
+	        find_self_shares();
+	        print_file_key(); print_shared_extents();
+		if (total_self_shared > 0)
+		    print_self_shared_extents();
+	    }
         }
         if (pr_sh && pr_unsh || no_headers) putchar('\n');
         if (pr_unsh) print_unshared_extents();

@@ -60,6 +60,7 @@ static sh_ext *new_sh_ext() {
     res->p= start;
     res->len= len;
     res->owners= owners;
+    res->self_shared= false;
     return res;
 }
 
@@ -163,3 +164,22 @@ extent *find_owner(sh_ext *s, unsigned i) {
     return NULL;
 }
 
+unsigned total_self_shared= 0, max_self_shared= 0;
+
+// relies on owners being sorted
+void find_self_shares() {
+  ITER(shared, sh_ext*, s_e, {
+      extent *last= NULL;
+      ITER(s_e->owners, extent*, o, {
+	  if (last != NULL && o->info == last->info) {
+	    s_e->self_shared= true;
+	    total_self_shared++;
+	    unsigned n= n_elems(s_e->owners);
+	    if (n > max_self_shared) max_self_shared= n;
+	    goto out;
+	  }
+	  last= o;
+	})
+	out: ;
+    })
+}
