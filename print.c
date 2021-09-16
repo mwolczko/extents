@@ -106,7 +106,6 @@ void print_extents_by_file() {
 }
 
 void print_shared_extents_no_header() {
-    unsigned e= 1;
     ITER(shared, sh_ext*, s_e, {
 	print_off_t(s_e->len);
 	if (print_phys_addr) print_off_t(s_e->p);

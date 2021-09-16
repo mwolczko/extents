@@ -47,7 +47,7 @@ void flags2str(unsigned flags, char *s, size_t n, bool sharing) {
             n= max(n - strlen(nm[i]), 0);
             if (n > 0) strncat(s, " ", n--);
         }
-    int l= strlen(s) - 1;
+    long l= strlen(s) - 1;
     if (l >= 0 && s[l] == ' ') s[l]= '\0';
 }
 
