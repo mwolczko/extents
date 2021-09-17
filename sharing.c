@@ -134,8 +134,8 @@ void find_shares() {
                 off_t tail_len= end - start_nxt;
                 // more efficient to insert all at once, since they all go at the same place. XXX
                 ITER(owners, extent*, owner, {
-                        extent *e= new_extent(owner->info, owner->l + len, start_nxt, tail_len, owner->flags);
-                        insert(e);
+                    extent *e= new_extent(owner->info, owner->l + len, start_nxt, tail_len, owner->flags);
+                    insert(e);
                 })
             }
             process_current();
@@ -168,18 +168,18 @@ unsigned total_self_shared= 0, max_self_shared= 0;
 
 // relies on owners being sorted
 void find_self_shares() {
-  ITER(shared, sh_ext*, s_e, {
-      extent *last= NULL;
-      ITER(s_e->owners, extent*, o, {
-	  if (last != NULL && o->info == last->info) {
-	    s_e->self_shared= true;
-	    total_self_shared++;
-	    unsigned n= n_elems(s_e->owners);
-	    if (n > max_self_shared) max_self_shared= n;
-	    goto out;
-	  }
-	  last= o;
-	})
-	out: ;
+    ITER(shared, sh_ext*, s_e, {
+        extent *last= NULL;
+        ITER(s_e->owners, extent * , o, {
+            if (last != NULL && o->info == last->info) {
+                s_e->self_shared= true;
+                total_self_shared++;
+                unsigned n= n_elems(s_e->owners);
+                if (n > max_self_shared) max_self_shared= n;
+                goto out;
+            }
+            last= o;
+        })
+        out:;
     })
 }

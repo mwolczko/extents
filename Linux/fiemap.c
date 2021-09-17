@@ -63,7 +63,7 @@ bool flags_are_sane(unsigned flags) {
 
 void get_extents(fileinfo *pfi, off_t max_len) {
     off_t start= roundDown(pfi->skip, blk_sz);
-    off_t len= max_len > 0 ? max_len : pfi->size - pfi->skip;;
+    off_t len= max_len > 0 ? max_len : pfi->size - pfi->skip;
     struct fiemap fm= { (__u64)start, (__u64)len, 0L, 0L, 0 };
     if (ioctl((int) pfi->fd, FS_IOC_FIEMAP, &fm) < 0)
         fail("Can't get extents : %s\n", strerror(errno));

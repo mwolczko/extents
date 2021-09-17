@@ -1,7 +1,3 @@
-//
-// Created by Mario Wolczko on 9/9/21.
-//
-
 #ifndef EXTENTS_PRINT_H
 #define EXTENTS_PRINT_H
 
