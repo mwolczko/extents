@@ -1,4 +1,5 @@
-Implementation of the "extents" and "ccmp" utilities for macOS and Linux as described in LINKS TBD
+Implementation of the "extents" and "ccmp" utilities for macOS and Linux as described in
+medium.com/LINK_TBD (also at http://www.wolczko.com/nvm-blog/Clonefiles.pdf).
 
 extents: analyses the sharing relationships between a collection of clonefiles (macOS) / reflinks (Linux).
 
